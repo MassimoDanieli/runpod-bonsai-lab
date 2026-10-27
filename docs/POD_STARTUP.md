@@ -66,3 +66,13 @@ The preflight reads only the expected hook invocation, checks whether `/post_sta
 **Do not install a permanent `/post_start.sh` yet.** Even if this hook exists, root-level files may disappear on a container redeploy/restart. An activation strategy must preserve access to SSH and Jupyter and must be tested on the exact image. The prepared Bonsai scripts live on `/workspace`; their invocation across restarts is still pending verification.
 
 Source: [RunPod container startup script](https://github.com/runpod/containers/blob/main/container-template/start.sh).
+
+## Read-only diagnostics while the Pod is stopped
+
+On the controller host, `bin/runpod-inspect` retrieves and displays only the Pod name, ID, status, image, launch arguments, persistent mount, exposed ports and currently published direct SSH endpoint. It does **not** start the GPU, print the API token or include the Pod's `env` object:
+
+```bash
+bash bin/runpod-inspect
+```
+
+This check confirms the **declared** container configuration but does not prove that the startup hook exists on disk. Once a GPU becomes available and the existing Pod can start, run the separate `bin/runpod-startup-preflight` inside the container before installing any hook. Never infer a valid SSH endpoint from an `EXITED` Pod.
