@@ -27,3 +27,24 @@ The **recommended future integration** is an explicitly configured RunPod contai
 Until then, start the server over authenticated SSH after the Pod reaches RUNNING. The controller on your local host can invoke `bonsai-server-start` after establishing SSH; this step has **not yet been implemented in the lifecycle CLI**. Do not rely on the server being up merely because the Pod is RUNNING.
 
 The model API must remain on `127.0.0.1` and be accessed through the private SSH tunnel, not the public HTTP proxy. Do not commit credentials or sensitive files.
+
+## Independent dry-run watchdog launcher
+
+Copy the orchestration helper and watchdog next to the two server scripts on the Pod's persistent volume:
+
+```bash
+install -m 755 bin/bonsai-pod-services-start /workspace/ai/Bonsai-demo/bin/
+install -m 644 bin/bonsai-watchdog.py /workspace/ai/Bonsai-demo/bin/
+```
+
+On a running Pod execute:
+
+```bash
+/workspace/ai/Bonsai-demo/bin/bonsai-pod-services-start
+```
+
+The launcher starts `llama-server` in the background, then checks that `/slots` returns a nonempty array of objects with boolean `is_processing`. Only when the endpoint works does it start an **independent Python watchdog process in dry-run mode**. If the model is still loading, retry the helper after the server becomes healthy. The watchdog remains dry-run and cannot stop the Pod via this launcher.
+
+Inspect logs with `tail -n 50 /workspace/ai/Bonsai-demo/run/{server,watchdog}.log`. These processes are not supervised across container restarts; an automatic Pod boot hook is still pending verification of the RunPod template's startup mechanism.
+
+**Cost safety:** dry-run does not stop GPU billing. Always stop the Pod explicitly through the controller or RunPod dashboard and confirm the stopped status. Do not modify the container entrypoint without first inspecting the template's SSH/Jupyter startup configuration.
