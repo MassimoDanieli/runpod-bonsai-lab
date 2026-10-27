@@ -7,7 +7,7 @@ CONFIG="${RUNPOD_BONSAI_CONFIG:-$HOME/.config/runpod.env}"
 API="https://api.runpod.io/v2/pods"
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
-usage() { echo "Usage: runpod-bonsai {status|start|stop}"; }
+usage() { echo "Usage: runpod-bonsai {status|endpoint|start|stop}"; }
 
 [[ -r "$CONFIG" ]] || die "Missing config: $CONFIG"
 # shellcheck source=/dev/null
@@ -47,6 +47,20 @@ status() {
 }
 case "${1:-}" in
   status) status ;;
+  endpoint)
+    # Emit exactly two lines for consumption by runpod-tunnel: IP and public SSH port.
+    api_get | jq -er '
+      if .status != "RUNNING" then
+        error("Pod is not RUNNING")
+      else
+        [.runtime.ports[]? | select(.type == "tcp" and .private == 22 and (.ip | type == "string") and (.public | type == "number"))] |
+        if length != 1 then error("Expected exactly one active TCP SSH mapping") else
+          .[0] | select(.public >= 1 and .public <= 65535) |
+          .ip, (.public | tostring)
+        end
+      end
+    '
+    ;;
   start)
     state="$(get_state)" || die "Could not determine current Pod status"
     if [[ "$state" == RUNNING ]]; then
