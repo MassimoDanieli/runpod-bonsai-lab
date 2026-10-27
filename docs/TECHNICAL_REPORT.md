@@ -1,39 +1,69 @@
-# Technical report — Bonsai local/cloud lab
+# Technical report: hybrid Bonsai 2 27B lab
 
-**Date:** 27 October 2026. **Status:** local stack working, cloud GPU benchmarked; automated cloud integration not yet deployed.
+**Updated:** 27 October 2026  
+**Status:** local inference and OpenCode operational; RunPod start/stop, manual SSH tunnel and OpenCode CLOUD inference **validated**; persistent tunnel, Pod-side startup and watchdog **not yet deployed**.
 
-## Existing topology
+## Architecture
 
-- `nero` — Ubuntu 26.10, Ryzen 5 5600G, RTX 3060 12GB, 32GB RAM; on-prem Bonsai 2 27B in PrismML ternary `PQ2_0`, llama-server on loopback `127.0.0.1:18080`, systemd `bonsai.service`; model context 65,536 and KV4 configuration. GPU power limit service at 145W.
-- Docker `opencode-lab` — custom OpenCode 1.19.4 image, Python, document-generation packages and LibreOffice. Docker uses `network_mode: host`; web port 4097 on loopback, Tailscale Serve private HTTPS on port 8443. Document agent can autonomously write project files and execute shell commands within container constraints.
-- `obm` — Ubuntu laptop, separate portable/backup OpenCode environment; not required for this phase.
-- RunPod — RTX 5090 32GB, Ubuntu 24.04/PyTorch 2.8/CUDA toolkit 12.8, NVIDIA driver 595.91.07 (CUDA 13.2 reported by nvidia-smi), 60GB RAM and 15 vCPU; 30GB persistent Pod disk observed in df. Pod can be stopped to stop GPU metering, storage may continue to cost money.
+- **nero:** Ubuntu 26.10, Ryzen 5 5600G, RTX 3060 (12 GB), RAM 32 GB. Bonsai 2 27B PQ2_0 runs as a systemd service, bound to `127.0.0.1:18080` (OpenAI-compatible `/v1`). Context configured to 65,536; GPU power limit systemd unit configured to 145 W.
+- **OpenCode:** Docker container `opencode-lab`, OpenCode 1.19.4 with Python/document libraries and LibreOffice. `network_mode: host`; local Web service `127.0.0.1:4097`; private Tailscale Serve HTTPS on port 8443. Document agent can generate DOCX, XLSX and PDF files within a writable workspace.
+- **obm:** Ubuntu ThinkPad T14 portable/backup environment; not required for cloud setup.
+- **RunPod:** RTX 5090 32 GB, Ubuntu 24.04, CUDA Toolkit 12.8, driver 595.91.07, 60 GB RAM, 15 vCPU. GPU billed at approximately $1.20/hour in the tested configuration, plus possible stopped-Pod storage costs.
 
-## Proven cloud test
+### Inference paths
 
-Bonsai-demo Git commit `294035e` (PrismML-Eng/Bonsai-demo); PrismML CUDA llama.cpp build 10787 commit `73bfe6cc4`. Model `Ternary-Bonsai-2-27B-PQ2_0.gguf` ~6.8 GB and `mmproj-Q8_0.gguf` ~601MB. CUDA device enumeration and `/health` succeeded. Text generation for a Kubernetes prompt: 1000 completion tokens in 7415.899 ms, **134.7106 tokens/s**, 42 prompt tokens. Local reference measurements 34.6 and 36.8 tokens/s under different conditions; indicative ratios 3.89x and 3.66x, **not controlled benchmarks**.
+```text
+Mac browser -- private Tailscale HTTPS --> nero OpenCode (host network)
+                                        |-- LOCAL: 127.0.0.1:18080 --> nero RTX 3060
+                                        +-- CLOUD: 127.0.0.1:18082
+                                                        |
+                                                   SSH local forward
+                                                        |
+                                          RunPod 127.0.0.1:18080 --> RTX 5090
+```
 
-## Intended cloud plumbing
+Do **not** expose the RunPod model HTTP API using its public HTTP proxy. The model server is bound to loopback and accessed only through direct-TCP SSH forwarding.
 
-Mac → private Tailscale → `nero` OpenCode (`network_mode:host`) → `127.0.0.1:18082` autossh local forward → RunPod `127.0.0.1:18080` llama-server. OpenCode provider `bonsai-cloud` exists but tunnel not yet live. Confirm exact `/v1/models` model ID upon integration.
+## Validated results
 
-## Operating and safety policy
+1. `runpod-bonsai start` using `POST /v2/pods/{id}/action` with `{"action":"start"}` succeeded (with confirmation).
+2. `GET /v2/pods/{id}` reported `RUNNING`; the response included a direct TCP port mapping `private: 22, type: tcp`. SSH endpoint IP and port are dynamic; example addresses are intentionally omitted.
+3. A dedicated Ed25519 key enabled noninteractive SSH authentication from `nero` to the Pod; manual `ssh -N -L 127.0.0.1:18082:127.0.0.1:18080` worked.
+4. The Pod's `llama-server` had to be launched manually following a Pod restart; a stopped Pod does **not** currently restart inference automatically.
+5. `curl http://127.0.0.1:18082/health` succeeded through the tunnel.
+6. OpenCode Web completed a real chat inference with **Bonsai CLOUD** selected.
+7. `runpod-bonsai stop` succeeded; subsequent Pod status was `EXITED`.
 
-- Local model and its services remain independent if cloud is stopped/unreachable.
-- SSH via direct exposed TCP, not public HTTP proxy. API key only if deliberate public model API use.
-- RunPod SSH IP/port may change after stop/start; fetch current direct-TCP endpoint, never assume fixed address.
-- `StrictHostKeyChecking=accept-new` dedicated known_hosts; deliberate host identity review on replacement.
-- Pod-side watchdog separate from llama-server, monitors `/slots`, does not stop during active generation based on idle timer; stops on prolonged `/slots` failure and enforces session maximum. Actual shutdown disabled by default until verified.
-- Stop means GPU billing ends but storage may remain billable; prepayment/autorecharge settings require verification in account.
-- Do not place internal government, personal or regulated data in unapproved external inference service.
+The working controller on `nero` is at `~/.local/bin/runpod-bonsai`. This repository's REST implementation is aligned with those operations but has **not yet been redeployed from GitHub** to `nero`.
 
-## Remaining work
+### Model and benchmark
 
-1. RunPod authenticated CLI on nero; generate/register dedicated SSH key.
-2. Confirm SSH over direct TCP access for already-running Pod and host identity handling.
-3. Configure tunnel endpoint; test `/health` and OpenCode model selector, including model ID.
-4. Configure llama-server as persistent process on the RunPod container; current manual launch does not survive container restart.
-5. Configure Pod-side watchdog with separate supervision, reliable stop API credentials and tests against active / idle / server down states.
-6. Add robust CLI endpoint discovery, health retries, session maximum, and alerting; test real stop/resume and GPU availability behavior.
-7. Perform apples-to-apples `llama-bench -p 512 -n 128` on both GPUs with same model/runtime and record power limit, KV/cache and driver.
-8. Review every file before pushing to GitHub, and ensure no secrets, keys, real participant data or identifying logs.
+- Bonsai-demo repository: `PrismML-Eng/Bonsai-demo` at commit `294035e`.
+- PrismML `llama.cpp` CUDA binary: build 10787, commit `73bfe6cc4`.
+- `Ternary-Bonsai-2-27B-PQ2_0.gguf` (~6.8 GB); optional multimodal projector (~601 MB).
+- Cloud sample: 1,000 generated tokens in 7,415.899 ms, **134.71 tokens/s** (42 prompt tokens, temperature 0, reasoning effort none).
+- Local observed results: **34.6** and **36.8 tokens/s**, obtained under different measurements. Approximate speedup: **3.89×** or **3.66×**, respectively. These are **not controlled apples-to-apples benchmarks**.
+
+## Current controller
+
+`bin/runpod-bonsai` makes authenticated RunPod REST calls using `curl` and `jq` (no `runpodctl` requirement), with `status`, interactive-confirmation `start` and `stop`. Pod ID and API key are stored **only** in `~/.config/runpod.env`, mode 600.
+
+RunPod API token was temporarily broadened to **All** after restricted permissions returned HTTP 403. Reduce to the minimum sufficient permissions as soon as RunPod's permission matrix is confirmed. Never place this token in GitHub.
+
+The previously drafted `bin/runpod-tunnel` and systemd service have **not** been installed/tested in this live integration and currently rely on separately configured endpoint details. They must not be described as fully automated.
+
+## Remaining engineering work
+
+1. Discover the current direct TCP SSH `private:22` mapping from the Pod REST response on every start; validate IP and port, never hardcode.
+2. Verify SSH host identity, then manage a dedicated known_hosts file without disabling host key checking.
+3. Install `autossh` as a persistent systemd service on `nero`; start only when the Pod is ready and keep LOCAL independent.
+4. Ensure Pod-side `llama-server` restarts automatically after Pod startup (the current RunPod container may not run systemd).
+5. Implement and test an independent Pod-side watchdog monitoring `/slots`: protect active generation, stop after sustained inactivity, distinguish transient unhealthiness from persistent server failure, and enforce a deliberate session cap.
+6. Test watchdog authorization and RunPod stop calls from **inside** the Pod before enabling actual shutdown. Keep dry-run default until validated.
+7. Test stop/restart recovery, missing GPU capacity, SSH host rotation, and failure paths; verify Pod storage/billing and prepaid auto-top-up account settings.
+8. Benchmark both GPUs using the same `llama-bench` options, model, prompt/generation sizes, driver and power settings.
+9. Review any publication for credentials, access tokens, hostnames, sensitive internal or participant data.
+
+## Operational note
+
+The existing Pod is currently **stopped (`EXITED`)** after the successful end-to-end test. The LOCAL provider on `nero` continues independently.
