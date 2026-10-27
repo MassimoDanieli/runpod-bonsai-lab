@@ -48,3 +48,21 @@ The launcher starts `llama-server` in the background, then checks that `/slots` 
 Inspect logs with `tail -n 50 /workspace/ai/Bonsai-demo/run/{server,watchdog}.log`. These processes are not supervised across container restarts; an automatic Pod boot hook is still pending verification of the RunPod template's startup mechanism.
 
 **Cost safety:** dry-run does not stop GPU billing. Always stop the Pod explicitly through the controller or RunPod dashboard and confirm the stopped status. Do not modify the container entrypoint without first inspecting the template's SSH/Jupyter startup configuration.
+
+## Safe preflight for the original RunPod image
+
+The controller API identifies the tested Pod image as `runpod/pytorch:1.4.1-cu1281-torch280-ubuntu2404`, with default container arguments and a persistent mount at `/workspace`.
+
+RunPod's publicly available container startup source includes a `/post_start.sh` hook after SSH/Jupyter startup. **The exact filesystem contents and lifecycle of the deployed image have not yet been inspected**, so this is not a verified boot hook for the specific Pod.
+
+Once the original Pod is RUNNING and SSH works, copy `bin/runpod-startup-preflight` from the repository and run:
+
+```bash
+bash bin/runpod-startup-preflight
+```
+
+The preflight reads only the expected hook invocation, checks whether `/post_start.sh` already exists, and verifies `/workspace`. It does not print the environment, edit the image, alter SSH/Jupyter, or launch any GPU workloads.
+
+**Do not install a permanent `/post_start.sh` yet.** Even if this hook exists, root-level files may disappear on a container redeploy/restart. An activation strategy must preserve access to SSH and Jupyter and must be tested on the exact image. The prepared Bonsai scripts live on `/workspace`; their invocation across restarts is still pending verification.
+
+Source: [RunPod container startup script](https://github.com/runpod/containers/blob/main/container-template/start.sh).
