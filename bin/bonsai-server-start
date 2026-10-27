@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Idempotent background launch on a running Pod; NOT a container boot hook.
+set -euo pipefail
+ROOT="${BONSAI_ROOT:-/workspace/ai/Bonsai-demo}"
+STATE="${BONSAI_STATE_DIR:-$ROOT/run}"
+STARTER="${BONSAI_STARTER:-$ROOT/bin/bonsai-server}"
+PORT="${BONSAI_PORT:-18080}"
+mkdir -p "$STATE"
+[[ -x "$STARTER" ]] || { echo "Install bonsai-server to: $STARTER" >&2; exit 1; }
+
+if curl --silent --fail --max-time 3 "http://127.0.0.1:$PORT/health" >/dev/null; then
+  echo "Bonsai already healthy."
+  exit 0
+fi
+if [[ -s "$STATE/server.pid" ]] && kill -0 "$(cat "$STATE/server.pid")" 2>/dev/null; then
+  echo "Bonsai process already running (still starting or unhealthy). Check $STATE/server.log"
+  exit 0
+fi
+nohup "$STARTER" >> "$STATE/server.log" 2>&1 < /dev/null &
+echo $! > "$STATE/server.pid"
+echo "Started Bonsai PID $(cat "$STATE/server.pid"). Check $STATE/server.log and /health."
