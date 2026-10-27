@@ -47,6 +47,7 @@ The tested environment used an RTX 5090; the scripts are **not tied to that GPU 
 - `bin/bonsai-server` and `bin/bonsai-server-start` — Pod-side loopback-only inference launch and log/PID management (**not a boot hook**).
 - `bin/runpod-serve` — launch the installed model startup script on a running Pod via SSH (**not yet deployed/tested**).
 - `bin/bonsai-watchdog.py` — **draft**, dry-run-by-default Pod-side safety watchdog.
+- `bin/bonsai-pod-services-start` — experimental helper to start the server and an independent **dry-run** watchdog on a running Pod, only after validating `/slots`. Does not install a boot hook.
 - `systemd/bonsai-watchdog.service` — illustrative unit for environments where systemd is available; most container Pods do not run systemd as PID 1.
 - `config/*.example` — credential-free configuration samples.
 - `docs/TECHNICAL_REPORT.md` — details of the original test lab and measured results.
