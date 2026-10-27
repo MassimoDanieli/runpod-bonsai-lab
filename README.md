@@ -1,62 +1,60 @@
 # RunPod Bonsai Lab
 
-Reproducible **development draft** of a hybrid Bonsai 2 27B setup: OpenCode on local Ubuntu host `nero` and optional RTX 5090 inference on RunPod via private SSH forwarding.
+Hybrid local/cloud inference for **Bonsai 2 27B**, with **OpenCode** on a home Ubuntu server and optional **RunPod RTX 5090** acceleration.
 
-**Status:** scaffold generated, syntax checked, not yet deployed on `nero` or RunPod. Do not publish credentials or government/participant data. Local Bonsai is never reconfigured or stopped by these scripts.
+**Status (27 October 2026):** End-to-end manual cloud inference has been validated: RunPod REST start → dedicated SSH → private tunnel → Bonsai health → OpenCode CLOUD response → RunPod REST stop. Automation of tunnel recovery, Pod inference startup, and Pod-side shutdown protection is **work in progress**.
 
-## Files
+## Architecture
 
-- `bin/runpod-bonsai`: local CLI; manages existing Pod using `runpodctl pod start/get/stop`, tunnel separately.
-- `bin/runpod-tunnel`: validated endpoint configuration and `autossh` tunnel (binds `127.0.0.1:18082`).
-- `systemd/runpod-tunnel.service`: `nero` unit.
-- `bin/bonsai-watchdog.py`: independent watchdog for the RunPod container. **Dry-run default**.
-- `systemd/bonsai-watchdog.service`: optional Pod unit (requires service installation and container systemd, often **not available** in Docker-based Pods; otherwise use supervisor/nohup).
-- `config/*.example`: credential-free sample configuration.
-- `docs/TECHNICAL_REPORT.md`: architecture, measurements, operational caveats.
-
-## Install on `nero` (review before executing)
-
-```bash
-sudo apt-get install -y autossh curl
-# Install RunPod CLI and authenticate separately following current official instructions.
-sudo install -m 755 bin/runpod-bonsai bin/runpod-tunnel /usr/local/bin/
-sudo install -m 644 systemd/runpod-tunnel.service /etc/systemd/system/
-mkdir -p ~/.config ~/.ssh
-chmod 700 ~/.ssh
-cp config/runpod-bonsai.env.example ~/.config/runpod-bonsai.env
-cp config/runpod-tunnel.env.example ~/.config/runpod-tunnel.env
-chmod 600 ~/.config/runpod-bonsai.env ~/.config/runpod-tunnel.env
-# Edit with vim; fill in the Pod ID, then the direct TCP SSH host/port AFTER starting the Pod.
-vim ~/.config/runpod-bonsai.env
-vim ~/.config/runpod-tunnel.env
-sudo systemctl daemon-reload
-# Create a dedicated key if absent:
-ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_runpod -C nero-to-runpod
-# Register only ~/.ssh/id_ed25519_runpod.pub in RunPod.
+```text
+Mac (browser) -- Tailscale HTTPS --> nero / OpenCode (Docker host network)
+                                      |-- LOCAL: localhost:18080 (RTX 3060)
+                                      +-- CLOUD: localhost:18082
+                                            |
+                                      private SSH tunnel
+                                            |
+                                    RunPod localhost:18080 (RTX 5090)
 ```
 
-Use `runpod-bonsai start`, inspect the current SSH endpoint in `runpodctl pod get POD_ID` / RunPod Connect, update tunnel config in vim, then `runpod-bonsai connect`; `runpod-bonsai status` checks server reachability, `runpod-bonsai stop` stops the tunnel and existing Pod.
+The LOCAL provider works even while the cloud Pod is stopped. The RunPod inference server must **not** be exposed using RunPod's public HTTP proxy.
 
-**Caveats:** This draft does **not yet automatically parse the changing SSH endpoint** and does **not automatically start llama-server** when the Pod resumes. Those are explicit remaining integration tasks; no false promise of one-command fully ready inference. Pod starts may fail because the original GPU is unavailable. `runpodctl` must be installed and authenticated in the execution context used.
+## Project files
 
-## Watchdog (RunPod Pod)
+- `bin/runpod-bonsai`: REST-based controller for an **existing** Pod (`status`, `start`, `stop`). Start requires an explicit `yes`.
+- `bin/runpod-tunnel` and `systemd/runpod-tunnel.service`: **draft** autossh tunnel implementation, not yet deployed/tested.
+- `bin/bonsai-watchdog.py`: **draft**, dry-run-by-default watchdog; production shutdown not yet validated.
+- `systemd/bonsai-watchdog.service`: example only; typical RunPod template containers do not run systemd.
+- `config/*.example`: non-secret configuration examples.
+- `docs/TECHNICAL_REPORT.md`: validated setup, measurements, operational issues and remaining work.
 
-Copy `bin/bonsai-watchdog.py` to `/workspace/ai/Bonsai-demo/`. Its default mode only logs intended shutdowns. When ready and after testing `/slots` response and authorization for `runpodctl pod stop`, launch it as an independent process (e.g. container supervisor). On typical RunPod Docker templates, systemd PID 1 is unavailable; the example unit is for systemd-capable environments only.
+## REST controller installation on nero
+
+Requires `bash`, `curl`, `jq`. Inference itself is unaffected by these operations.
 
 ```bash
-python3 /workspace/ai/Bonsai-demo/bonsai-watchdog.py --pod-id POD_ID --idle-minutes 45 --unhealthy-minutes 90 --max-hours 8
-# Enable actual stopping ONLY after validating runpodctl auth and desired fail-safe behavior:
-python3 /workspace/ai/Bonsai-demo/bonsai-watchdog.py --pod-id POD_ID --execute-stop
+sudo apt-get install -y curl jq autossh
+mkdir -p ~/.local/bin ~/.config
+install -m 700 bin/runpod-bonsai ~/.local/bin/runpod-bonsai
+cp config/runpod-bonsai.env.example ~/.config/runpod.env
+chmod 600 ~/.config/runpod.env
+vim ~/.config/runpod.env   # Set the existing Pod ID and API key; NEVER commit this file
+~/.local/bin/runpod-bonsai status
+~/.local/bin/runpod-bonsai start
+~/.local/bin/runpod-bonsai stop
 ```
 
-The watchdog observes `/slots`: processing keeps idle timer reset; prolonged unhealthiness after 90 min triggers stop; independent 8-hour session ceiling triggers stop **even during a generation**. This is a deliberate hard-cost ceiling; adjust to protect critical jobs. A network gap is indistinguishable from server failure with this signal alone. Consider adding `ps` and `/health` checks before production.
+The Pod's SSH address and port can change after every start. At present, start/stop do **not** automatically create the tunnel or start the inference server. Follow the verified manual steps in `docs/TECHNICAL_REPORT.md` until automated recovery has been tested.
 
-## Security
+**API access:** a restricted RunPod API key initially returned HTTP 403 in this setup. Grant only required permissions when possible; a full-access key should be treated as **temporary and high-risk**.
 
-`llama-server` on RunPod listens on `127.0.0.1:18080`. Use only direct-TCP SSH forwarding. No RunPod HTTP proxy for model API. SSH host authenticity with `StrictHostKeyChecking=accept-new` is trust-on-first-use; a fresh Pod's identity should be independently verified where possible. **Do not delete/reset known_hosts automatically on every reconnect**: doing so would hide key changes. Use a new dedicated file/identity only when deliberately provisioning a different Pod. RunPod Pod env secrets and the API key must never be committed.
+## SSH security
 
-## References
+Use a dedicated private key (`~/.ssh/runpod_ed25519`) on `nero` with its public key authorized in the RunPod Pod. Keep inference on `127.0.0.1:18080` on the Pod; use direct exposed-TCP SSH forwarding to `127.0.0.1:18082` on `nero`. Do not disable host-key checking. A dedicated known_hosts file with `StrictHostKeyChecking=accept-new` is trust-on-first-use and should be reviewed on endpoint changes.
 
-- RunPod Pod CLI: https://docs.runpod.io/runpodctl/reference/runpodctl-remove-pods
-- RunPod GPU allocation: https://docs.runpod.io/pods/troubleshooting/zero-gpus
-- llama.cpp slot API: https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md
+## Cost and reliability
+
+RunPod's running GPU is billed; stopped Pod storage may also incur charges. The Pod-side watchdog is not currently active. Do not depend on unverified automatic shutdown for cost control. Always confirm `EXITED` after a stop.
+
+Keep all keys, API tokens, passwords, model weights, and real/private participant or government information out of this repository.
+
+See [technical report](docs/TECHNICAL_REPORT.md) for benchmark data and work still required.
