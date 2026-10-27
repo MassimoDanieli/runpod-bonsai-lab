@@ -24,11 +24,32 @@ api_get() {
     -H "Authorization: Bearer ${RUNPOD_API_KEY}" "$URL"
 }
 api_action() {
-  local action="$1"
-  curl --fail --silent --show-error --connect-timeout 10 --max-time 60 \
-    -X POST -H "Authorization: Bearer ${RUNPOD_API_KEY}" \
-    -H "Content-Type: application/json" \
-    --data "{\"action\":\"$action\"}" "$URL/action"
+  local action="$1" body http_code detail
+  body="$(mktemp)" || die "Unable to create response buffer"
+  # Capture the error body as well as the HTTP code: curl -f discards the useful
+  # JSON explanation for rejected Pod starts (e.g. unavailable host GPU).
+  if ! http_code="$(curl --silent --show-error --connect-timeout 10 --max-time 60 \
+      -o "$body" -w '%{http_code}' \
+      -X POST -H "Authorization: Bearer ${RUNPOD_API_KEY}" \
+      -H "Content-Type: application/json" \
+      --data "{\"action\":\"$action\"}" "$URL/action")"; then
+    rm -f "$body"
+    die "RunPod API connection failed. No automatic retry was made."
+  fi
+  if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
+    detail="$(jq -r '.detail // .message // .title // empty' "$body" 2>/dev/null || true)"
+    rm -f "$body"
+    if [[ "$action" == start && "$http_code" == 400 &&
+          "$detail" == *"not enough free GPUs"* ]]; then
+      printf 'GPU_UNAVAILABLE: %s\n' "$detail" >&2
+      echo "The existing Pod was preserved. No additional Pod was created." >&2
+      return 3
+    fi
+    printf 'RUNPOD_API_ERROR: action=%s HTTP=%s %s\n' "$action" "$http_code" "$detail" >&2
+    return 1
+  fi
+  cat "$body"
+  rm -f "$body"
 }
 get_state() {
   api_get | jq -er '.status | select(type == "string" and length > 0)'
