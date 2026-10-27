@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Safe, read-only RunPod diagnostics. Never displays environment variables.
+set -euo pipefail
+CONFIG="${RUNPOD_BONSAI_CONFIG:-$HOME/.config/runpod.env}"
+[[ -r "$CONFIG" ]] || { echo "Missing configuration: $CONFIG" >&2; exit 1; }
+# shellcheck source=/dev/null
+source "$CONFIG"
+: "${RUNPOD_API_KEY:?Missing RUNPOD_API_KEY}"
+: "${RUNPOD_POD_ID:?Missing RUNPOD_POD_ID}"
+[[ "$RUNPOD_POD_ID" =~ ^[A-Za-z0-9_-]+$ ]] || exit 2
+command -v curl >/dev/null
+command -v jq >/dev/null
+
+curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
+  -H "Authorization: Bearer ${RUNPOD_API_KEY}" \
+  "https://api.runpod.io/v2/pods/${RUNPOD_POD_ID}" |
+jq -er '
+  if (.id | type) != "string" or (.status | type) != "string"
+  then error("Unexpected RunPod API response")
+  else {
+    name: .name,
+    id: .id,
+    status: .status,
+    image: .image,
+    args: .args,
+    persistent_mount: .mounts.persistent,
+    exposed_ports: .ports,
+    ssh_endpoints: (
+      [.runtime.ports[]? |
+        select(.type == "tcp" and .private == 22) |
+        {ip, public_port: .public}]
+    ),
+    warning: (if .status == "EXITED"
+      then "GPU is stopped; SSH endpoint is not usable until Pod runs."
+      else "RUNNING does not imply model readiness or SSH reachability."
+      end)
+  } end
+'
