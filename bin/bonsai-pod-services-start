@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Explicit Pod-side launch of two independent processes; NOT an automatic boot hook.
+set -euo pipefail
+ROOT="${BONSAI_ROOT:-/workspace/ai/Bonsai-demo}"
+STATE="${BONSAI_STATE_DIR:-$ROOT/run}"
+STARTER="$ROOT/bin/bonsai-server-start"
+WATCHDOG="$ROOT/bin/bonsai-watchdog.py"
+PORT="${BONSAI_PORT:-18080}"
+mkdir -p "$STATE"
+[[ -x "$STARTER" ]] || { echo "Missing $STARTER" >&2; exit 1; }
+[[ -f "$WATCHDOG" ]] || { echo "Missing $WATCHDOG" >&2; exit 1; }
+
+"$STARTER"
+if [[ "${BONSAI_WATCHDOG_DRY_RUN:-1}" != "1" ]]; then
+  echo "Refusing to enable automatic shutdown: production stop backend has not been validated." >&2
+  exit 2
+fi
+
+if [[ -s "$STATE/watchdog.pid" ]] && kill -0 "$(cat "$STATE/watchdog.pid")" 2>/dev/null; then
+  echo "Watchdog process is already running."
+  exit 0
+fi
+
+# Do not start a watchdog unless /slots actually works and returns slot state.
+# It may require enabling --slots in the PrismML llama-server build.
+if ! python3 - "$PORT" <<'PY'
+import json,sys,urllib.request
+url="http://127.0.0.1:"+sys.argv[1]+"/slots"
+try:
+    with urllib.request.urlopen(url,timeout=5) as response:
+        slots=json.load(response)
+    assert isinstance(slots,list) and len(slots)>0
+    assert all(isinstance(s,dict) and type(s.get("is_processing")) is bool for s in slots)
+except Exception as exc:
+    print(f"Watchdog not started: /slots is not ready ({exc})",file=sys.stderr)
+    sys.exit(1)
+PY
+then
+  echo "Inference may still be starting; retry after /slots is available." >&2
+  exit 1
+fi
+
+nohup python3 "$WATCHDOG" --idle-minutes 45 --unhealthy-minutes 90 --max-hours 8 \
+  >> "$STATE/watchdog.log" 2>&1 < /dev/null &
+echo "$!" > "$STATE/watchdog.pid"
+echo "Bonsai and DRY-RUN watchdog started independently."
+echo "Logs: $STATE/server.log and $STATE/watchdog.log"
