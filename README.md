@@ -11,13 +11,13 @@ Browser -> local Linux host / OpenCode
                                                -> Pod 127.0.0.1:18080
 ```
 
-Manual end-to-end cloud inference has been demonstrated. Managed startup and
-unattended shutdown still require live acceptance testing. See [Status](docs/STATUS.md)
-for implemented, tested and pending work rather than assuming production readiness.
+Manual end-to-end cloud inference has been demonstrated. Pod-local process
+supervision is now implemented and tested offline; boot integration and unattended
+shutdown still require live acceptance. See [Status](docs/STATUS.md).
 
 ## Quick start: controller
 
-Requires Linux, Bash, Python 3.10+, Git, curl, jq and OpenSSH. For an optional managed
+Requires Linux, Bash, Python 3.11+, Git, curl, jq and OpenSSH. For an optional managed
 tunnel, install autossh/systemd. Create a RunPod Pod separately; these commands do
 not create or start one. Set up the Pod model and its SSH public key before connecting.
 
@@ -43,6 +43,14 @@ A start request does not mean inference is ready. See the SSH/startup guides bel
 The controller preserves the existing Pod and returns exit code 3 on
 `GPU_UNAVAILABLE`; it does not automatically retry or create replacements.
 
+## Pod processes
+
+[Pod startup](docs/POD_STARTUP.md) describes `bonsai-pod.py start|status|stop|run`.
+It manages separate model/watchdog processes, validates readiness, rejects stale PID
+identities and retains the session deadline across local restarts. The compatibility
+launchers now start that managed pair. This is **not** the cloud lifecycle controller,
+a verified boot hook, or a GPU billing stop; the supervised watchdog stays dry-run.
+
 ## Cost and safety
 
 The reference RTX 5090 experiment displayed approximately **$1.20/hour** on
@@ -62,15 +70,16 @@ Pod snapshot. Retain source data until restored inference is verified.
 bash tests/run-all.sh
 ```
 
-The gate uses synthetic files and mocked cloud operations, not GPU resources or
-real API credentials. Atomic restore tests require Linux. CI also runs static checks;
+The gate uses synthetic files, mocked cloud operations and loopback fake servers,
+not GPU resources or real API credentials. Restore/process tests require Linux;
+the supervisor uses `/proc`, `flock` and pidfds. CI also runs static checks;
 see each PR for actual execution results and remaining limitations.
 
 ## Documentation
 
 - [Status and remaining work](docs/STATUS.md)
 - [Dynamic SSH tunnel](docs/DYNAMIC_TUNNEL.md)
-- [Pod startup and template preflight](docs/POD_STARTUP.md)
+- [Pod supervision, startup and template preflight](docs/POD_STARTUP.md)
 - [Watchdog, REST shutdown and session persistence](docs/WATCHDOG.md)
 - [Controlled artifact backup and restoration](docs/MIGRATION.md)
 - [Original lab report and indicative benchmarks](docs/TECHNICAL_REPORT.md)

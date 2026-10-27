@@ -1,39 +1,52 @@
 # Implementation and validation status
 
-## Safety-fix branch, 27 October 2026
+## Process-supervision branch, 27 October 2026
 
-This change set addresses backup/restore integrity and watchdog shutdown reliability
-identified in review PR #1. It is not a deployment, boot integration or complete
-`up/down/wait` orchestrator. No paid compute or real credential is used in tests.
+This branch is stacked on safety PR #2. It adds Pod-local process management for
+review; no host/Pod deployment, boot-hook change, GPU start or real cloud stop has
+been performed. Existing LOCAL inference is untouched.
 
-Implemented and locally tested on Linux / Python 3.13.5:
+New implementation:
 
-- Private staged artifact backups; no deletion of competing final artifacts.
-- Same-stream hashes, source-change detection, actual optional model names and
-  contained relative library-link materialization.
-- Staged, no-clobber restore; canonical paths, collision/resource checks and
-  atomic Linux publication. Final destination must be absent.
-- Watchdog REST stop, fresh activity gate, status reconciliation, bounded backoff,
-  confirmed EXITED, finite time settings and private persistent session state.
-- Watchdog unit path fixed. Dry-run remains the default.
-- Offline test runner, CI definition and additional private-artifact ignore rules.
+- Linux lifetime locks and structured PID/start-time/boot/namespace/executable
+  identity; pidfd-based external stop, refusing unmanaged listeners/processes.
+- Detached supervisor with a separately initialized dry-run watchdog before the
+  model starts. Readiness requires both `/health` and `/slots`, with a timeout.
+- Model failure leaves the watchdog observing; watchdog failure stops the managed
+  model and uses a bounded restart budget without resetting the session deadline.
+- Explicit resume/new-session rules; no guess that a watchdog restart is a Pod start.
+- Bounded live model/supervisor logs. Watchdog logs rotate at restart only, keeping
+  their direct output descriptor independent of supervisor lifetime.
+- Compatibility launchers start the managed pair; an optional systemd example
+  applies only where systemd is actually available.
+- New offline unit and process-integration checks are included in `tests/run-all.sh`.
 
-The unit suite contains 56 tests, supplemented by the existing GPU-unavailable,
-startup-preflight and migration smoke scripts. Local execution results are recorded
-in the PR. GitHub Actions is separate: do not claim its status until it actually runs.
+See the PR for actual local and CI results; publication is not live deployment.
+The supervisor deliberately refuses actual watchdog shutdown. It may stop local
+inference on a dry-run decision, but **does not stop paid GPU billing**.
 
-## Not fixed or not verified yet
+## Safety PR #2 retained
 
-- Server/helper stale PID identity, locking, cold-start watchdog gap and logging.
-- Automatic session identity creation tied to an actual Pod run.
-- Live REST shutdown from inside the Pod with limited credentials and controller offline.
-- Image boot hooks, SSH/Jupyter persistence and independent process supervision.
-- Common SSH/configuration refactor, automatic endpoint refresh during reconnection,
-  configurable remote root and local health port, and noninteractive start approval.
-- Lifecycle orchestration, replacement-Pod policy and portable storage strategy.
-- Runtime compatibility of a multi-gigabyte restored real model.
-- Licence choice, broader secret/history audit, and provider-side budget guard.
+Private no-clobber backups, same-stream hashes, source-change detection, explicit
+asset selection, contained relative library materialization, staged atomic Linux
+restore, REST watchdog shutdown/reconciliation/backoff, persistent session records,
+finite timeout validation, ignore rules and offline CI remain in this branch.
+The existing safety tests must keep passing.
 
-Keep watchdog shutdown disabled until live acceptance tests are completed. Keep
-the source Pod/data. Do not merge a branch merely because its unit tests pass.
-The technical report documents the original lab, not every deployment's state.
+## Not implemented or not verified yet
+
+- Genuine Pod-run identity supplied by a trusted lifecycle controller. Current
+  supervisor session identity is local and resets only with explicit authorization.
+- Live model/`--slots` compatibility and boot/restart tests for the actual RunPod
+  PyTorch image. No `/post_start.sh` hook is installed.
+- External recovery from whole-supervisor SIGKILL/OOM, container death, host/storage
+  failure, and continuous watchdog log retention in a long-lived deployment.
+- Real least-privilege REST shutdown from inside the Pod with controller offline.
+- Common SSH/configuration refactor, endpoint refresh during reconnect,
+  configurable remote root/local controller health port and noninteractive start.
+- `up/down/wait`, automated replacement Pods, and portable storage strategy.
+- Real restored-model inference, licence choice, complete secret/history audit,
+  and an independent provider/account-level spending guard.
+
+Retain the source Pod/data. Keep actual shutdown disabled until controlled live
+acceptance. Do not merge or deploy solely because an offline test suite passes.

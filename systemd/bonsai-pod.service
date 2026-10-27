@@ -1,0 +1,21 @@
+# Example only: requires systemd as a service manager, not a default Docker Pod.
+# Do not also enable bonsai-watchdog.service for this runtime directory.
+[Unit]
+Description=Bonsai model and dry-run watchdog supervisor
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+WorkingDirectory=/workspace/ai/Bonsai-demo
+EnvironmentFile=-/workspace/bonsai-pod.env
+ExecStart=/usr/bin/python3 /workspace/ai/Bonsai-demo/bin/bonsai-pod.py run
+Restart=on-failure
+RestartSec=10
+KillMode=control-group
+TimeoutStopSec=20
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target
