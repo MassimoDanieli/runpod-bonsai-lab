@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Start Bonsai on a running RunPod Pod over direct TCP SSH.
+# Requires bin/bonsai-server-start already installed inside persistent /workspace.
+set -euo pipefail
+die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+controller="${RUNPOD_BONSAI_BIN:-$HOME/.local/bin/runpod-bonsai}"
+config="${RUNPOD_BONSAI_CONFIG:-$HOME/.config/runpod.env}"
+[[ -r "$config" ]] || die "Missing config: $config"
+# shellcheck source=/dev/null
+source "$config"
+key="${RUNPOD_SSH_KEY:-$HOME/.ssh/runpod_ed25519}"
+known="${RUNPOD_KNOWN_HOSTS:-$HOME/.ssh/known_hosts_runpod}"
+[[ -r "$key" ]] || die "SSH key missing: $key"
+[[ -x "$controller" ]] || die "Controller missing: $controller"
+mapping="$("$controller" endpoint)" || die "Pod must be RUNNING with TCP SSH mapping"
+mapfile -t parts <<< "$mapping"
+(( ${#parts[@]} == 2 )) || die "Invalid endpoint mapping"
+host="${parts[0]}" port="${parts[1]}"
+[[ "$host" =~ ^[A-Za-z0-9.:_-]+$ ]] || die "Invalid SSH host"
+[[ "$port" =~ ^[0-9]+$ ]] && (( 10#$port >= 1 && 10#$port <= 65535 )) || die "Invalid SSH port"
+mkdir -p "$(dirname "$known")"
+ssh -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10 \
+  -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$known" \
+  -i "$key" -p "$port" "root@$host" \
+  '/workspace/ai/Bonsai-demo/bin/bonsai-server-start'
+echo "Remote Bonsai start attempted. Verify via SSH tunnel and /health."
