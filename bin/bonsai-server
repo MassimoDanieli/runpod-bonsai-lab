@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Run on a RunPod Pod with Bonsai-demo already installed in persistent storage.
+# This script starts a single loopback-only llama-server instance.
+set -euo pipefail
+
+ROOT="${BONSAI_ROOT:-/workspace/ai/Bonsai-demo}"
+MODEL="${BONSAI_MODEL_PATH:-$ROOT/models/bonsai2-gguf/27B/Ternary-Bonsai-2-27B-PQ2_0.gguf}"
+BIN="${BONSAI_SERVER_BIN:-$ROOT/bin/cuda/llama-server}"
+HOST="127.0.0.1"
+PORT="${BONSAI_PORT:-18080}"
+CTX="${BONSAI_CTX:-65536}"
+NGL="${BONSAI_NGL:-99}"
+
+[[ -x "$BIN" ]] || { echo "Missing executable llama-server: $BIN" >&2; exit 1; }
+[[ -r "$MODEL" ]] || { echo "Missing model: $MODEL" >&2; exit 1; }
+[[ "$PORT" =~ ^[0-9]+$ ]] || exit 2
+[[ "$CTX" =~ ^[0-9]+$ ]] || exit 2
+[[ "$NGL" =~ ^[0-9]+$ ]] || exit 2
+cd "$ROOT"
+exec "$BIN" -m "$MODEL" -ngl "$NGL" -c "$CTX" --host "$HOST" --port "$PORT"
