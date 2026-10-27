@@ -1,30 +1,38 @@
 #!/usr/bin/env bash
-# Read-only inspection of startup behavior on a running RunPod container.
-# Never prints the environment, credentials, or SSH authorized_keys.
+# Read-only inspection of a RunPod container startup hook.
+# Configurable paths exist exclusively for offline testing.
 set -euo pipefail
-start="/start.sh"
+
+start="${RUNPOD_PREFLIGHT_START:-/start.sh}"
+hook="${RUNPOD_PREFLIGHT_HOOK:-/post_start.sh}"
+workspace="${RUNPOD_PREFLIGHT_WORKSPACE:-/workspace}"
+
 echo "=== RunPod startup preflight (read-only) ==="
 if [[ ! -f "$start" ]]; then
-  echo "MISSING: $start"
+  echo "MISSING: startup script"
   exit 2
 fi
-echo "Startup script exists: $start"
-if grep -Eq 'execute_script[[:space:]]+["'\'' ]?/post_start[.]sh' "$start"; then
-  echo "FOUND: post-start hook invocation"
-else
-  echo "NOT FOUND: expected /post_start.sh invocation"
-  echo "Do not install a hook until startup behavior is reviewed."
+echo "Startup script exists"
+
+# Ignore comment-only lines. Confirm the expected path is present in an
+# executable statement, not merely mentioned in documentation.
+if ! grep -E '^[[:space:]]*[^#[:space:]].*post_start[.]sh' "$start" |
+     grep -Fq "$hook"; then
+  echo "NOT VERIFIED: executable post-start hook invocation"
+  echo "Review the actual startup script before making changes."
   exit 3
 fi
-if [[ -e /post_start.sh || -L /post_start.sh ]]; then
-  echo "EXISTS: /post_start.sh; do not replace without reviewing it."
+echo "CANDIDATE: post-start hook appears in active startup code"
+echo "MANUAL REVIEW REQUIRED: verify invocation order and execution semantics"
+
+if [[ -e "$hook" || -L "$hook" ]]; then
+  echo "EXISTS: hook path; never overwrite an existing file"
 else
-  echo "ABSENT: /post_start.sh"
+  echo "ABSENT: hook path"
 fi
-if [[ -d /workspace ]]; then
-  echo "FOUND: /workspace directory"
-else
-  echo "MISSING: /workspace directory"
+if [[ ! -d "$workspace" ]]; then
+  echo "MISSING: persistent workspace"
   exit 4
 fi
-echo "Read-only preflight completed. No changes made."
+echo "Workspace directory exists"
+echo "Read-only inspection finished. No hook was installed or enabled."
