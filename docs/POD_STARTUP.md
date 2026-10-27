@@ -76,3 +76,15 @@ bash bin/runpod-inspect
 ```
 
 This check confirms the **declared** container configuration but does not prove that the startup hook exists on disk. Once a GPU becomes available and the existing Pod can start, run the separate `bin/runpod-startup-preflight` inside the container before installing any hook. Never infer a valid SSH endpoint from an `EXITED` Pod.
+
+## Offline startup preflight regression test
+
+Before accessing a paid GPU, test the inspection script locally on the controller:
+
+```bash
+bash tests/test_startup_preflight.sh
+```
+
+The test uses temporary fake startup scripts. It verifies that a missing `/start.sh` is rejected, a comment-only reference does not count as evidence, an active hook reference is detected, an existing hook file is flagged, and the persistent workspace is required.
+
+**Important:** The preflight performs a conservative text inspection, not a shell parser. Even a passing result is **not sufficient authorization** to install `/post_start.sh`. Before changing a live container, review the exact startup script for invocation order, whether the hook is sourced or executed, and whether the underlying image recreates the root filesystem after a restart. No boot hook is installed by this repository at this stage.
