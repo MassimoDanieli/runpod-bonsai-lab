@@ -1,37 +1,74 @@
 #!/usr/bin/env bash
+# RunPod Bonsai controller: REST API operations for an existing Pod.
+# Requires: curl, jq, ~/.config/runpod.env (mode 600).
 set -euo pipefail
-CONFIG="${RUNPOD_BONSAI_CONFIG:-$HOME/.config/runpod-bonsai.env}"
-[[ -r "$CONFIG" ]] || { echo "Missing $CONFIG (see config/runpod-bonsai.env.example)" >&2; exit 2; }
+
+CONFIG="${RUNPOD_BONSAI_CONFIG:-$HOME/.config/runpod.env}"
+API="https://api.runpod.io/v2/pods"
+
+die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+usage() { echo "Usage: runpod-bonsai {status|start|stop}"; }
+
+[[ -r "$CONFIG" ]] || die "Missing config: $CONFIG"
 # shellcheck source=/dev/null
 source "$CONFIG"
-: "${RUNPOD_POD_ID:?RUNPOD_POD_ID must be configured}"
-[[ "$RUNPOD_POD_ID" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo "Invalid pod id" >&2; exit 2; }
-command -v runpodctl >/dev/null || { echo "runpodctl not installed" >&2; exit 2; }
-usage() { echo "Usage: runpod-bonsai {start|status|stop|connect|disconnect}"; }
+: "${RUNPOD_API_KEY:?RUNPOD_API_KEY is missing}"
+: "${RUNPOD_POD_ID:?RUNPOD_POD_ID is missing}"
+[[ "$RUNPOD_POD_ID" =~ ^[A-Za-z0-9_-]+$ ]] || die "Invalid Pod ID"
+command -v curl >/dev/null || die "curl is required"
+command -v jq >/dev/null || die "jq is required"
+URL="$API/$RUNPOD_POD_ID"
+
+api_get() {
+  curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
+    -H "Authorization: Bearer ${RUNPOD_API_KEY}" "$URL"
+}
+api_action() {
+  local action="$1"
+  curl --fail --silent --show-error --connect-timeout 10 --max-time 60 \
+    -X POST -H "Authorization: Bearer ${RUNPOD_API_KEY}" \
+    -H "Content-Type: application/json" \
+    --data "{\"action\":\"$action\"}" "$URL/action"
+}
+get_state() {
+  api_get | jq -er '.status | select(type == "string" and length > 0)'
+}
+status() {
+  api_get | jq -er '
+    select(.id != null and .name != null and .status != null) |
+    "Pod: \(.name)\nID: \(.id)\nStatus: \(.status)"
+  '
+  if curl --fail --silent --show-error --connect-timeout 1 --max-time 3 \
+    http://127.0.0.1:18082/health >/dev/null 2>&1; then
+    echo "Cloud model API: reachable via local tunnel"
+  else
+    echo "Cloud model API: unavailable (normal when Pod is stopped)"
+  fi
+}
 case "${1:-}" in
- start)
-   runpodctl pod start "$RUNPOD_POD_ID"
-   echo "Pod start requested. Obtain fresh direct-TCP SSH host/port using: runpodctl pod get $RUNPOD_POD_ID"
-   echo "Update ~/.config/runpod-tunnel.env, then run: runpod-bonsai connect"
-   ;;
- status)
-   runpodctl pod get "$RUNPOD_POD_ID"
-   if curl -fsS --connect-timeout 1 --max-time 3 http://127.0.0.1:18082/health >/dev/null 2>&1; then
-     echo "Cloud tunnel/API: reachable"
-   else
-     echo "Cloud tunnel/API: unavailable"
-   fi
-   ;;
- stop)
-   sudo systemctl stop runpod-tunnel.service 2>/dev/null || true
-   runpodctl pod stop "$RUNPOD_POD_ID"
-   ;;
- connect)
-   sudo systemctl restart runpod-tunnel.service
-   echo "Inspect: systemctl status runpod-tunnel.service"
-   ;;
- disconnect)
-   sudo systemctl stop runpod-tunnel.service
-   ;;
- *) usage; exit 2;;
+  status) status ;;
+  start)
+    state="$(get_state)" || die "Could not determine current Pod status"
+    if [[ "$state" == RUNNING ]]; then
+      echo "Pod already running."
+      exit 0
+    fi
+    echo "Current status: $state"
+    echo "Starting the Pod incurs GPU and storage charges."
+    read -r -p "Start RunPod? [yes/NO] " answer
+    [[ "$answer" == yes ]] || { echo "Cancelled."; exit 0; }
+    api_action start | jq .
+    echo "Start requested. Check: runpod-bonsai status"
+    ;;
+  stop)
+    state="$(get_state)" || die "Could not determine current Pod status"
+    if [[ "$state" == EXITED ]]; then
+      echo "Pod already stopped."
+      exit 0
+    fi
+    api_action stop | jq .
+    echo "Stop requested. Check: runpod-bonsai status"
+    echo "If an SSH forward is running, stop it separately."
+    ;;
+  *) usage >&2; exit 2 ;;
 esac
