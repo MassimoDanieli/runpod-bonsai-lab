@@ -2,7 +2,7 @@
 
 Hybrid local/cloud inference for **Bonsai 2 27B**, using a self-hosted OpenAI-compatible client (such as OpenCode) and an optional **RunPod GPU** connected over a private SSH tunnel.
 
-**Project status:** The basic end-to-end workflow has been tested on one Ubuntu host: start an existing RunPod Pod through the REST API, establish an SSH tunnel, access Bonsai from OpenCode, and stop the Pod. Dynamic SSH endpoint discovery and a portable autossh launcher have been implemented but **not yet tested on a fresh Pod restart**. Automatic model-server startup and Pod-side watchdog shutdown are **not production-ready yet**.
+**Project status:** The basic end-to-end workflow has been tested on one Ubuntu host: start an existing RunPod Pod through the REST API, establish an SSH tunnel, access Bonsai from OpenCode, and stop the Pod. Dynamic SSH endpoint discovery and a portable autossh launcher have been implemented but **not yet tested on a fresh Pod restart**. Pod-side start scripts and an SSH remote launcher are now available, but automatic invocation after Pod start and the Pod-side watchdog are **not production-ready yet**.
 
 ## Architecture
 
@@ -44,6 +44,8 @@ The tested environment used an RTX 5090; the scripts are **not tied to that GPU 
 
 - `bin/runpod-bonsai` — REST controller for an **existing** Pod (`status`, `start`, `stop`). Starting requires explicit confirmation; if the original host has no free GPU, the CLI reports `GPU_UNAVAILABLE` and does not retry or create a new Pod.
 - `bin/runpod-tunnel` and `systemd/runpod-tunnel.service` — **draft** SSH tunnel implementation; not yet tested as a managed service. The launcher now reads the active SSH endpoint from the RunPod REST API instead of hardcoding IP/port values.
+- `bin/bonsai-server` and `bin/bonsai-server-start` — Pod-side loopback-only inference launch and log/PID management (**not a boot hook**).
+- `bin/runpod-serve` — launch the installed model startup script on a running Pod via SSH (**not yet deployed/tested**).
 - `bin/bonsai-watchdog.py` — **draft**, dry-run-by-default Pod-side safety watchdog.
 - `systemd/bonsai-watchdog.service` — illustrative unit for environments where systemd is available; most container Pods do not run systemd as PID 1.
 - `config/*.example` — credential-free configuration samples.
@@ -122,3 +124,7 @@ Configure your OpenAI-compatible client to use `http://127.0.0.1:18082/v1`. A cl
 - Do not send confidential or regulated workloads to third-party compute without appropriate authorization.
 
 For an offline error-handling regression test, run `bash tests/test_gpu_unavailable.sh` (no RunPod GPU required).\n\nFor the portable experimental tunnel, see [Dynamic SSH tunnel](docs/DYNAMIC_TUNNEL.md). For the original host-specific setup, tests, performance numbers and remaining engineering tasks, see [Technical Report](docs/TECHNICAL_REPORT.md).
+
+## Pod inference startup (experimental)
+
+See [Pod startup guide](docs/POD_STARTUP.md). The scripts must be installed on the Pod's persistent workspace first. From the Linux controller, `bin/runpod-serve` can issue an authenticated SSH launch after `runpod-bonsai status` reports RUNNING. It does **not** create a Pod, reserve a GPU, start the tunnel, or ensure boot-time startup. The RunPod template entrypoint remains unchanged until verified on a real running Pod.
