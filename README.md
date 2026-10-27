@@ -2,7 +2,7 @@
 
 Hybrid local/cloud inference for **Bonsai 2 27B**, using a self-hosted OpenAI-compatible client (such as OpenCode) and an optional **RunPod GPU** connected over a private SSH tunnel.
 
-**Project status:** The basic end-to-end workflow has been tested on one Ubuntu host: start an existing RunPod Pod through the REST API, establish an SSH tunnel, access Bonsai from OpenCode, and stop the Pod. Automatic endpoint discovery, tunnel lifecycle management, model-server startup, and Pod-side watchdog shutdown are **not production-ready yet**.
+**Project status:** The basic end-to-end workflow has been tested on one Ubuntu host: start an existing RunPod Pod through the REST API, establish an SSH tunnel, access Bonsai from OpenCode, and stop the Pod. Dynamic SSH endpoint discovery and a portable autossh launcher have been implemented but **not yet tested on a fresh Pod restart**. Automatic model-server startup and Pod-side watchdog shutdown are **not production-ready yet**.
 
 ## Architecture
 
@@ -43,7 +43,7 @@ The tested environment used an RTX 5090; the scripts are **not tied to that GPU 
 ## Repository contents
 
 - `bin/runpod-bonsai` — REST controller for an **existing** Pod (`status`, `start`, `stop`). Starting requires explicit confirmation.
-- `bin/runpod-tunnel` and `systemd/runpod-tunnel.service` — **draft** SSH tunnel implementation; not yet tested as a managed service. Some paths are still tailored to the original test host and must be adapted before deployment.
+- `bin/runpod-tunnel` and `systemd/runpod-tunnel.service` — **draft** SSH tunnel implementation; not yet tested as a managed service. The launcher now reads the active SSH endpoint from the RunPod REST API instead of hardcoding IP/port values.
 - `bin/bonsai-watchdog.py` — **draft**, dry-run-by-default Pod-side safety watchdog.
 - `systemd/bonsai-watchdog.service` — illustrative unit for environments where systemd is available; most container Pods do not run systemd as PID 1.
 - `config/*.example` — credential-free configuration samples.
@@ -121,4 +121,4 @@ Configure your OpenAI-compatible client to use `http://127.0.0.1:18082/v1`. A cl
 - The watchdog is **not currently active**. Do not rely on automatic shutdown until it has been tested with valid stop credentials inside the Pod.
 - Do not send confidential or regulated workloads to third-party compute without appropriate authorization.
 
-For the original host-specific setup, tests, performance numbers and remaining engineering tasks, see [Technical Report](docs/TECHNICAL_REPORT.md).
+For the portable experimental tunnel, see [Dynamic SSH tunnel](docs/DYNAMIC_TUNNEL.md). For the original host-specific setup, tests, performance numbers and remaining engineering tasks, see [Technical Report](docs/TECHNICAL_REPORT.md).
