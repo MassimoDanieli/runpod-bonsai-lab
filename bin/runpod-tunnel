@@ -8,7 +8,7 @@ source "$CONFIG"
 : "${RUNPOD_PORT:?Missing RUNPOD_PORT}"
 [[ "$RUNPOD_HOST" =~ ^[a-zA-Z0-9.-]+$ ]] || { echo "Invalid host" >&2; exit 2; }
 [[ "$RUNPOD_PORT" =~ ^[0-9]+$ ]] && ((RUNPOD_PORT >= 1 && RUNPOD_PORT <= 65535)) || { echo "Invalid port" >&2; exit 2; }
-KEY="${RUNPOD_SSH_KEY:-/home/maxd/.ssh/id_ed25519_runpod}"
+KEY="${RUNPOD_SSH_KEY:-/home/maxd/.ssh/runpod_ed25519}"
 KNOWN="${RUNPOD_KNOWN_HOSTS:-/home/maxd/.ssh/known_hosts_runpod}"
 [[ -f "$KEY" ]] || { echo "SSH private key missing: $KEY" >&2; exit 2; }
 if [[ ! -e "$KNOWN" ]]; then
