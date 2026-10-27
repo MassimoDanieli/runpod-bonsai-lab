@@ -33,4 +33,35 @@ class SlotsTests(unittest.TestCase):
                 mod.get_slot_state('http://localhost/slots')
 
 
+
+
+class WatchdogStateTests(unittest.TestCase):
+    def test_idle_timeout(self):
+        w = mod.Watchdog(60, 120, 3600, 0)
+        self.assertEqual(w.observe(0, processing=False), ('idle', None))
+        self.assertEqual(w.observe(60, processing=False), ('idle', 'idle-timeout'))
+
+    def test_processing_resets_idle(self):
+        w = mod.Watchdog(60, 120, 3600, 0)
+        w.observe(55, processing=True)
+        self.assertEqual(w.observe(100, processing=False), ('idle', None))
+        self.assertEqual(w.observe(116, processing=False), ('idle', 'idle-timeout'))
+
+    def test_transient_outage(self):
+        w = mod.Watchdog(60, 120, 3600, 0)
+        w.observe(40, error=True)
+        self.assertEqual(w.observe(100, error=True), ('unhealthy', None))
+        self.assertEqual(w.observe(110, processing=False), ('idle', None))
+
+    def test_prolonged_outage(self):
+        w = mod.Watchdog(60, 120, 3600, 0)
+        w.observe(10, error=True)
+        self.assertEqual(w.observe(129, error=True), ('unhealthy', None))
+        self.assertEqual(w.observe(130, error=True), ('unhealthy', 'prolonged-unhealthy-server'))
+
+    def test_hard_ceiling_even_while_busy(self):
+        w = mod.Watchdog(60, 120, 3600, 0)
+        self.assertEqual(w.observe(3600, processing=True), ('processing', 'maximum-session-duration'))
+
+
 if __name__ == '__main__': unittest.main()
