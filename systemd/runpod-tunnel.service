@@ -1,0 +1,16 @@
+[Unit]
+Description=RunPod Bonsai SSH local forward
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=maxd
+ExecStart=/usr/local/bin/runpod-tunnel
+Restart=on-failure
+RestartSec=10
+StartLimitIntervalSec=0
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

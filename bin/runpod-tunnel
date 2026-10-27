@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+CONFIG="${RUNPOD_TUNNEL_CONFIG:-/home/maxd/.config/runpod-tunnel.env}"
+[[ -r "$CONFIG" ]] || { echo "Missing tunnel config: $CONFIG" >&2; exit 2; }
+# shellcheck source=/dev/null
+source "$CONFIG"
+: "${RUNPOD_HOST:?Missing RUNPOD_HOST}"
+: "${RUNPOD_PORT:?Missing RUNPOD_PORT}"
+[[ "$RUNPOD_HOST" =~ ^[a-zA-Z0-9.-]+$ ]] || { echo "Invalid host" >&2; exit 2; }
+[[ "$RUNPOD_PORT" =~ ^[0-9]+$ ]] && ((RUNPOD_PORT >= 1 && RUNPOD_PORT <= 65535)) || { echo "Invalid port" >&2; exit 2; }
+KEY="${RUNPOD_SSH_KEY:-/home/maxd/.ssh/id_ed25519_runpod}"
+KNOWN="${RUNPOD_KNOWN_HOSTS:-/home/maxd/.ssh/known_hosts_runpod}"
+[[ -f "$KEY" ]] || { echo "SSH private key missing: $KEY" >&2; exit 2; }
+if [[ ! -e "$KNOWN" ]]; then
+  ( umask 077; : > "$KNOWN" )
+fi
+chmod 600 "$KNOWN"
+exec /usr/bin/autossh -M 0 -N \
+ -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+ -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=accept-new \
+ -o "UserKnownHostsFile=$KNOWN" -o IdentitiesOnly=yes \
+ -i "$KEY" -p "$RUNPOD_PORT" \
+ -L 127.0.0.1:18082:127.0.0.1:18080 "root@$RUNPOD_HOST"

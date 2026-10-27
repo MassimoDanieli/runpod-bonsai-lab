@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+CONFIG="${RUNPOD_BONSAI_CONFIG:-$HOME/.config/runpod-bonsai.env}"
+[[ -r "$CONFIG" ]] || { echo "Missing $CONFIG (see config/runpod-bonsai.env.example)" >&2; exit 2; }
+# shellcheck source=/dev/null
+source "$CONFIG"
+: "${RUNPOD_POD_ID:?RUNPOD_POD_ID must be configured}"
+[[ "$RUNPOD_POD_ID" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo "Invalid pod id" >&2; exit 2; }
+command -v runpodctl >/dev/null || { echo "runpodctl not installed" >&2; exit 2; }
+usage() { echo "Usage: runpod-bonsai {start|status|stop|connect|disconnect}"; }
+case "${1:-}" in
+ start)
+   runpodctl pod start "$RUNPOD_POD_ID"
+   echo "Pod start requested. Obtain fresh direct-TCP SSH host/port using: runpodctl pod get $RUNPOD_POD_ID"
+   echo "Update ~/.config/runpod-tunnel.env, then run: runpod-bonsai connect"
+   ;;
+ status)
+   runpodctl pod get "$RUNPOD_POD_ID"
+   if curl -fsS --connect-timeout 1 --max-time 3 http://127.0.0.1:18082/health >/dev/null 2>&1; then
+     echo "Cloud tunnel/API: reachable"
+   else
+     echo "Cloud tunnel/API: unavailable"
+   fi
+   ;;
+ stop)
+   sudo systemctl stop runpod-tunnel.service 2>/dev/null || true
+   runpodctl pod stop "$RUNPOD_POD_ID"
+   ;;
+ connect)
+   sudo systemctl restart runpod-tunnel.service
+   echo "Inspect: systemctl status runpod-tunnel.service"
+   ;;
+ disconnect)
+   sudo systemctl stop runpod-tunnel.service
+   ;;
+ *) usage; exit 2;;
+esac

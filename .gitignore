@@ -1,0 +1,9 @@
+*.env
+!*.env.example
+*.pem
+id_ed25519*
+known_hosts*
+*.key
+__pycache__/
+.pytest_cache/
+*.gguf

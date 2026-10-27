@@ -1,0 +1,14 @@
+[Unit]
+Description=RunPod Bonsai independent cost watchdog
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/workspace/ai/Bonsai-demo
+EnvironmentFile=/workspace/runpod-watchdog.env
+ExecStart=/usr/bin/python3 /workspace/ai/Bonsai-demo/bonsai-watchdog.py --idle-minutes 45 --unhealthy-minutes 90 --max-hours 8 --interval-seconds 30
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target
