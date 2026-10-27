@@ -47,6 +47,7 @@ The tested environment used an RTX 5090; the scripts are **not tied to that GPU 
 - `bin/bonsai-server` and `bin/bonsai-server-start` — Pod-side loopback-only inference launch and log/PID management (**not a boot hook**).
 - `bin/runpod-serve` — launch the installed model startup script on a running Pod via SSH (**not yet deployed/tested**).
 - `bin/bonsai-watchdog.py` — **draft**, dry-run-by-default Pod-side safety watchdog.
+- `bin/bonsai-backup.py` and `bin/bonsai-restore.py` — allowlisted backup and SHA-256-verified, no-overwrite restore; see [Migration](docs/MIGRATION.md). Backup requires access to the original Pod's storage.
 - `bin/runpod-startup-preflight` — read-only inspection of the original RunPod image's `/post_start.sh` hook; no boot modifications.
 - `bin/bonsai-pod-services-start` — experimental helper to start the server and an independent **dry-run** watchdog on a running Pod, only after validating `/slots`. Does not install a boot hook.
 - `systemd/bonsai-watchdog.service` — illustrative unit for environments where systemd is available; most container Pods do not run systemd as PID 1.
@@ -130,3 +131,7 @@ For an offline error-handling regression test, run `bash tests/test_gpu_unavaila
 ## Pod inference startup (experimental)
 
 See [Pod startup guide](docs/POD_STARTUP.md). The scripts must be installed on the Pod's persistent workspace first. From the Linux controller, `bin/runpod-serve` can issue an authenticated SSH launch after `runpod-bonsai status` reports RUNNING. It does **not** create a Pod, reserve a GPU, start the tunnel, or ensure boot-time startup. The RunPod template entrypoint remains unchanged until verified on a real running Pod.
+
+## Migration preparation
+
+If the original stopped Pod cannot regain its GPU, **do not delete it**. Its persistent container volume is not automatically portable. [Controlled migration guide](docs/MIGRATION.md) describes offline tests, source inventory, selected-file backup and checksum-verified restoration once the original workspace is accessible. Test locally with `python3 tests/test_migration.py`; this does not start any GPU or perform an upload.
