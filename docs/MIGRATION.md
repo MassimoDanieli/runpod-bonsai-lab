@@ -1,30 +1,30 @@
-# Controlled Bonsai Pod migration
+# Controlled Bonsai artifact migration
 
-**Status: prepared, not yet deployed or verified on the original Pod.**
+Keep the original Pod/data until the restored runtime has completed real inference.
+The scripts copy selected artifacts; they are not a full filesystem image, package
+manager snapshot, secret scanner or guarantee of CUDA compatibility.
 
-The original RunPod Pod may be unable to restart because its GPU host is full. Its 30 GB persistent `/workspace` mount is Pod-attached storage, **not a portable Network Volume**. Do not delete the Pod or assume another Pod can mount that storage. Running GPU time and storage may incur charges.
+## Source and inventory
 
-## Recovery prerequisites
+A backup requires access to the source filesystem. It cannot retrieve an
+inaccessible stopped Pod's volume. An existing local copy can also be used, but
+its runtime/model compatibility must be verified separately.
 
-To create a backup, you must first regain access to the original workspace (for example, by successfully starting the original Pod or using a provider-supported recovery route). The tools in this repository **cannot retrieve files from an inaccessible, stopped Pod**.
+Required: primary `Ternary-Bonsai-2-27B-PQ2_0.gguf` and `bin/cuda/llama-server`.
+Optional known model names include `Ternary-Bonsai-2-27B-mmproj-Q8_0.gguf`, the
+legacy f16 projector name, and `Bonsai-2-27B-kv-bias.gguf` in the 27B model directory.
+Only top-level `llama-*` executable-shaped names and `lib*.so[.VERSION]` files in
+`bin/cuda` are selected. Review any runtime with another directory layout.
 
-The main GGUF model is approximately 6.8 GB, so the backup and its transfer require substantial additional space and time. Other files may be larger. Confirm free space before starting.
-
-## Inventory (read-only)
-
-On the **original Pod**, after it is accessible:
-
-```bash
-du -sh /workspace/ai/Bonsai-demo
-find /workspace/ai/Bonsai-demo/models -type f -printf '%P %s bytes\n'
-find /workspace/ai/Bonsai-demo/bin/cuda -maxdepth 2 -type f -printf '%P %s bytes\n'
-```
-
-Review model filenames and bin layout. Check for symbolic links and any files needed at runtime; the initial allowlist intentionally excludes symlinks, hidden configuration, keys, source trees, caches, `run/`, and potentially sensitive files. Some excluded files may be necessary to rebuild or operate a different installation.
+Contained relative file symlinks are **materialized as regular files**, with the
+resolved relative target recorded in the manifest. Absolute/escaping links and
+symlinked source subdirectories are rejected. This retains library alias names
+without restoring symlinks. Filename selection is not a content-based secret scan:
+review the manifest and keep immutable assets in a trusted source directory.
 
 ## Backup
 
-Copy this repository to the original Pod under `/workspace`, then from its root:
+From the repository root on a machine with the source and enough free disk space:
 
 ```bash
 python3 bin/bonsai-backup.py \
@@ -32,33 +32,60 @@ python3 bin/bonsai-backup.py \
   --output /workspace/bonsai-migration.tar.gz
 ```
 
-The script produces `bonsai-migration.tar.gz` and `bonsai-migration.tar.gz.manifest.json`, listing SHA-256 for each archived file. It refuses to overwrite an existing backup. Currently selected files: the primary 27B PQ2_0 GGUF, optional mmproj at one expected name, and regular non-secret files under `bin/cuda/`. Review/adjust the allowlist for actual Pod contents before treating it as a complete migration.
+Both output archive and `.manifest.json` are private (mode 600). Hashes are computed
+from the same bytes passed into the archive; changed/replaced source files cause
+failure. No output may be placed inside the source tree.
 
-**Never commit either backup or manifest to GitHub.** Treat both as private artifacts; review the manifest for potentially sensitive file paths. Transfer over authenticated SSH/SCP or an appropriately protected storage service. No upload is performed by the scripts.
+Creation occurs in a uniquely owned staging directory. Final paths are published
+using no-clobber hard links; an existing or concurrently created output is never
+removed or overwritten. The manifest is published last. Two filenames cannot be
+published atomically as one operation: a crash/collision between publications can
+leave an incomplete pair. Inspect it, retain the source, and retry with a NEW name.
+The script deliberately never deletes a final pathname during error cleanup.
+The destination filesystem must support hard links. This is not a distributed
+snapshot or a guarantee against a hostile user changing trusted parent directories.
 
-## Restore to a new compatible Pod
+Transfer the archive AND manifest over an authenticated channel. Hashes prove
+consistency, not authenticity if an attacker can replace both. Keep the expected
+archive hash separately where practical. Never commit backup artifacts to GitHub.
 
-Do not create or pay for another GPU Pod until the backup has been obtained and validated, and until the replacement's compute cost and storage location are approved. A GPU with sufficient VRAM and a compatible CUDA runtime is required.
+## Restore (Linux)
 
-On a replacement Pod after transferring the archive and manifest:
+Linux `renameat2(RENAME_NOREPLACE)` support is required. The destination parent
+must exist, and the final destination **must not exist**, even as an empty directory.
+This is an intentional compatibility change from the preliminary implementation.
 
 ```bash
+mkdir -p /workspace/ai
 python3 bin/bonsai-restore.py \
   --archive /workspace/bonsai-migration.tar.gz \
   --manifest /workspace/bonsai-migration.tar.gz.manifest.json \
   --destination /workspace/ai/Bonsai-demo-restored
 ```
 
-Restore refuses a nonempty destination, rejects archive links and unsafe paths, and validates every archived file's SHA-256 before writing. The restored directory contains **selected model and CUDA binary artifacts**, not the full source repository or all container dependencies. Reinstall or clone the pinned PrismML source, rebuild/reinstall any missing runtime dependencies, review executable permissions, and update launch paths if necessary. Validate the GPU runtime and `curl http://127.0.0.1:18080/health` locally before turning on the controller tunnel.
+Validation rejects noncanonical/aliased paths, parent symlinks, file/directory
+collisions, links/sparse archive members, duplicate members, size/hash mismatches
+and limits exceeding `--max-files` (10,000) or `--max-bytes` (100 GiB).
+Extraction and hashing happen in a private sibling staging tree. Only after every
+check succeeds is the complete directory published atomically without replacing
+an existing destination. Failures clean staging, not user data. This does not use
+`extractall`. On an unsupported platform/filesystem publication fails closed.
 
-Only after successful inference through OpenCode CLOUD and complete data verification should you consider removing the old Pod. The controller's Pod ID, endpoint and SSH host identity must be updated explicitly for the replacement. No automatic provisioning or deletion is implemented.
+The staging tree consumes disk before publication; enforce host resource limits
+for untrusted archives. The Linux tests do not certify every network filesystem,
+concurrent hostile modification or sudden power failure scenario.
 
-## Offline regression test
+Reinstall missing OS dependencies, verify the exact CUDA runtime and model settings,
+then check model enumeration, `/health` and actual inference. Do not delete the
+original Pod simply because archive checksums pass. Update the controller Pod ID
+and SSH host identity deliberately when moving to a different Pod.
 
-On any Linux/macOS machine with Python 3:
+## Offline validation
 
 ```bash
-python3 tests/test_migration.py
+bash tests/run-all.sh
 ```
 
-The test creates dummy files, checks exclusion and executable permission retention, verifies the restore and confirms the overwrite protection. It does not touch RunPod or transfer any real model data.
+Includes round-trip smoke tests and regressions for concurrent backup writers,
+source changes, unsafe links, corrupted hashes, destination races, resource limits
+and simulated write failure. Tests use small synthetic files and no cloud API.

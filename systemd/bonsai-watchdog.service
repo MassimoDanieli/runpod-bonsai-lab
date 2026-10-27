@@ -1,12 +1,12 @@
 [Unit]
-Description=RunPod Bonsai independent cost watchdog
+Description=RunPod Bonsai independent cost watchdog (dry-run example)
 After=network.target
 
 [Service]
 Type=simple
 WorkingDirectory=/workspace/ai/Bonsai-demo
 EnvironmentFile=/workspace/runpod-watchdog.env
-ExecStart=/usr/bin/python3 /workspace/ai/Bonsai-demo/bonsai-watchdog.py --idle-minutes 45 --unhealthy-minutes 90 --max-hours 8 --interval-seconds 30
+ExecStart=/usr/bin/python3 /workspace/ai/Bonsai-demo/bin/bonsai-watchdog.py --session-id ${BONSAI_SESSION_ID} --state-file /workspace/ai/Bonsai-demo/run/watchdog-session.json --idle-minutes 45 --unhealthy-minutes 90 --max-hours 8 --interval-seconds 30
 Restart=on-failure
 RestartSec=15
 

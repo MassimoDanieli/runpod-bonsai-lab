@@ -2,8 +2,17 @@
 !*.env.example
 *.pem
 id_ed25519*
+runpod_ed25519*
+# Host trust records identify deployment endpoints; provision privately, not via Git.
 known_hosts*
 *.key
 __pycache__/
 .pytest_cache/
 *.gguf
+# Model archives and manifests belong in private backup storage, not this repository.
+*.tar.gz
+*.tar.gz.manifest.json
+*.tgz
+*.manifest.json
+watchdog-session.json*
+run/

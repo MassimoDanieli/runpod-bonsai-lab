@@ -1,137 +1,78 @@
 # RunPod Bonsai Lab
 
-Hybrid local/cloud inference for **Bonsai 2 27B**, using a self-hosted OpenAI-compatible client (such as OpenCode) and an optional **RunPod GPU** connected over a private SSH tunnel.
-
-**Project status:** The basic end-to-end workflow has been tested on one Ubuntu host: start an existing RunPod Pod through the REST API, establish an SSH tunnel, access Bonsai from OpenCode, and stop the Pod. Dynamic SSH endpoint discovery and a portable autossh launcher have been implemented but **not yet tested on a fresh Pod restart**. Pod-side start scripts and an SSH remote launcher are now available, but automatic invocation after Pod start and the Pod-side watchdog are **not production-ready yet**.
-
-## Architecture
+Use Bonsai 2 27B locally or on an existing RunPod GPU Pod, from a self-hosted
+OpenAI-compatible client such as OpenCode. The controller runs on a Linux PC;
+GPU model and hostname are deployment choices, not hardcoded requirements.
 
 ```text
-Client / browser
-       |
-       v
-Local Linux host + OpenCode (or another API client)
-       |                              |
-       |-- LOCAL model (optional)     +-- CLOUD provider: 127.0.0.1:18082
-       |                                        |
-       |                                 SSH port forwarding
-       |                                        |
-       +-----------------------------> RunPod Pod: 127.0.0.1:18080
-                                                  |
-                                             GPU / Bonsai 2
+Browser -> local Linux host / OpenCode
+              |-- LOCAL -> local llama-server
+              +-- CLOUD -> 127.0.0.1:18082 -> private SSH tunnel
+                                               -> Pod 127.0.0.1:18080
 ```
 
-The local model, if configured, is independent of RunPod. The cloud model API should remain bound to loopback; **do not expose it via a public RunPod HTTP proxy**.
+Manual end-to-end cloud inference has been demonstrated. Managed startup and
+unattended shutdown still require live acceptance testing. See [Status](docs/STATUS.md)
+for implemented, tested and pending work rather than assuming production readiness.
 
-## Requirements
+## Quick start: controller
 
-On the **controller host** (any compatible Linux PC/server):
-
-- Linux, Bash, `curl`, `jq`, and SSH client
-- An existing RunPod Pod and a RunPod API key with Pod read/start/stop permissions
-- A dedicated SSH key whose public key is authorized on the Pod
-- Optional: `autossh` and systemd for the **experimental** managed tunnel
-
-On the **RunPod Pod**:
-
-- A compatible NVIDIA GPU, CUDA runtime, the PrismML Bonsai-enabled llama.cpp build, and Bonsai GGUF model
-- `llama-server` bound to `127.0.0.1:18080`
-- Direct TCP SSH access (port 22 forwarded by RunPod)
-
-The tested environment used an RTX 5090; the scripts are **not tied to that GPU model**.
-
-## Repository contents
-
-- `bin/runpod-bonsai` — REST controller for an **existing** Pod (`status`, `start`, `stop`). Starting requires explicit confirmation; if the original host has no free GPU, the CLI reports `GPU_UNAVAILABLE` and does not retry or create a new Pod.
-- `bin/runpod-tunnel` and `systemd/runpod-tunnel.service` — **draft** SSH tunnel implementation; not yet tested as a managed service. The launcher now reads the active SSH endpoint from the RunPod REST API instead of hardcoding IP/port values.
-- `bin/bonsai-server` and `bin/bonsai-server-start` — Pod-side loopback-only inference launch and log/PID management (**not a boot hook**).
-- `bin/runpod-serve` — launch the installed model startup script on a running Pod via SSH (**not yet deployed/tested**).
-- `bin/bonsai-watchdog.py` — **draft**, dry-run-by-default Pod-side safety watchdog.
-- `bin/bonsai-backup.py` and `bin/bonsai-restore.py` — allowlisted backup and SHA-256-verified, no-overwrite restore; see [Migration](docs/MIGRATION.md). Backup requires access to the original Pod's storage.
-- `bin/runpod-startup-preflight` — read-only inspection of the original RunPod image's `/post_start.sh` hook; no boot modifications.
-- `bin/bonsai-pod-services-start` — experimental helper to start the server and an independent **dry-run** watchdog on a running Pod, only after validating `/slots`. Does not install a boot hook.
-- `systemd/bonsai-watchdog.service` — illustrative unit for environments where systemd is available; most container Pods do not run systemd as PID 1.
-- `config/*.example` — credential-free configuration samples.
-- `docs/TECHNICAL_REPORT.md` — details of the original test lab and measured results.
-
-## Install the REST controller (Linux)
-
-Clone this repository on the machine that will manage RunPod:
+Requires Linux, Bash, Python 3.10+, Git, curl, jq and OpenSSH. For an optional managed
+tunnel, install autossh/systemd. Create a RunPod Pod separately; these commands do
+not create or start one. Set up the Pod model and its SSH public key before connecting.
 
 ```bash
 git clone https://github.com/MassimoDanieli/runpod-bonsai-lab.git
 cd runpod-bonsai-lab
-```
-
-On Debian/Ubuntu, install dependencies:
-
-```bash
-sudo apt-get update
-sudo apt-get install -y curl jq openssh-client
-```
-
-On other Linux distributions, install the same tools with the distribution's package manager.
-
-Install the controller for the **current user**:
-
-```bash
 mkdir -p "$HOME/.local/bin" "$HOME/.config"
-install -m 700 bin/runpod-bonsai "$HOME/.local/bin/runpod-bonsai"
-install -m 600 config/runpod-bonsai.env.example "$HOME/.config/runpod.env"
+install -m 700 bin/runpod-bonsai "$HOME/.local/bin/"
+test -e "$HOME/.config/runpod.env" || install -m 600 config/runpod-bonsai.env.example "$HOME/.config/runpod.env"
 vim "$HOME/.config/runpod.env"
 ```
 
-Set `RUNPOD_POD_ID` to your **existing** Pod ID and `RUNPOD_API_KEY` to your API key. Keep the configuration local and private (`chmod 600 ~/.config/runpod.env`). **Never commit real credentials.**
-
-Run commands using the explicit path, or add `~/.local/bin` to your `PATH`:
-
-```bash
-"$HOME/.local/bin/runpod-bonsai" status
-"$HOME/.local/bin/runpod-bonsai" start
-"$HOME/.local/bin/runpod-bonsai" stop
-```
-
-The CLI reports API results; **start does not mean that inference is ready**. After starting, verify the Pod status, its current direct-TCP SSH endpoint, and the Bonsai health endpoint. After stopping, verify that the Pod reaches `EXITED`.
-
-### Manual SSH tunnel (until automation is completed)
-
-After the Pod starts, obtain its **current** direct TCP SSH host and public port from RunPod. Then, from the controller host:
+Set your existing Pod ID and API key; adapt optional paths to your user account.
+Do not overwrite an existing private configuration when updating the repository.
 
 ```bash
-ssh -i "$HOME/.ssh/runpod_ed25519" \
-  -p <SSH_PUBLIC_PORT> \
-  -o IdentitiesOnly=yes -o BatchMode=yes \
-  -o ExitOnForwardFailure=yes \
-  -o StrictHostKeyChecking=accept-new \
-  -o "UserKnownHostsFile=$HOME/.ssh/known_hosts_runpod" \
-  -N -L 127.0.0.1:18082:127.0.0.1:18080 \
-  root@<SSH_PUBLIC_IP>
+~/.local/bin/runpod-bonsai status
+~/.local/bin/runpod-bonsai start   # asks before starting paid compute
+~/.local/bin/runpod-bonsai stop   # confirm EXITED afterwards
 ```
 
-Replace the bracketed placeholders with your Pod's actual values. Generate the key with `ssh-keygen -t ed25519 -f ~/.ssh/runpod_ed25519` if needed and register **only the public key** in RunPod. Do not disable SSH host-key checking. `accept-new` is trust-on-first-use; independently verify host identity where possible.
+A start request does not mean inference is ready. See the SSH/startup guides below.
+The controller preserves the existing Pod and returns exit code 3 on
+`GPU_UNAVAILABLE`; it does not automatically retry or create replacements.
 
-Once the model server is running inside the Pod, test from the controller:
+## Cost and safety
+
+The reference RTX 5090 experiment displayed approximately **$1.20/hour** on
+25 October 2026; this is an observed example, not a current price guarantee.
+Stopped Pod storage can remain billable, and a stopped Pod may be unable to regain
+a GPU. Always confirm EXITED after stopping; watchdog **dry-run does not stop billing**.
+
+Keep inference on loopback, using direct TCP SSH rather than a public HTTP proxy.
+Docker clients need a way to reach the host endpoint; bridge-network `127.0.0.1`
+is not the host. Keep credentials outside the repository and model workspace.
+A SHA-256 manifest is an integrity check, not an authenticity signature or a full
+Pod snapshot. Retain source data until restored inference is verified.
+
+## Offline checks
 
 ```bash
-curl --fail http://127.0.0.1:18082/health
+bash tests/run-all.sh
 ```
 
-Configure your OpenAI-compatible client to use `http://127.0.0.1:18082/v1`. A client running in Docker must be able to reach the host loopback endpoint (for example using host networking); bridge-network containers do **not** share the host's `127.0.0.1`.
+The gate uses synthetic files and mocked cloud operations, not GPU resources or
+real API credentials. Atomic restore tests require Linux. CI also runs static checks;
+see each PR for actual execution results and remaining limitations.
 
-## Security and billing
+## Documentation
 
-- Keep API keys, SSH private keys, passwords, model files and confidential data out of Git.
-- The reference deployment required temporarily broad API access after restricted permissions returned HTTP 403; **reduce API access to the smallest working scope** when supported.
-- Running GPU time incurs charges. Stopped Pods can still incur storage charges, and GPU capacity may not be available when restarting.
-- The watchdog is **not currently active**. Do not rely on automatic shutdown until it has been tested with valid stop credentials inside the Pod.
-- Do not send confidential or regulated workloads to third-party compute without appropriate authorization.
+- [Status and remaining work](docs/STATUS.md)
+- [Dynamic SSH tunnel](docs/DYNAMIC_TUNNEL.md)
+- [Pod startup and template preflight](docs/POD_STARTUP.md)
+- [Watchdog, REST shutdown and session persistence](docs/WATCHDOG.md)
+- [Controlled artifact backup and restoration](docs/MIGRATION.md)
+- [Original lab report and indicative benchmarks](docs/TECHNICAL_REPORT.md)
 
-For an offline error-handling regression test, run `bash tests/test_gpu_unavailable.sh` (no RunPod GPU required).\n\nFor the portable experimental tunnel, see [Dynamic SSH tunnel](docs/DYNAMIC_TUNNEL.md). For the original host-specific setup, tests, performance numbers and remaining engineering tasks, see [Technical Report](docs/TECHNICAL_REPORT.md).
-
-## Pod inference startup (experimental)
-
-See [Pod startup guide](docs/POD_STARTUP.md). The scripts must be installed on the Pod's persistent workspace first. From the Linux controller, `bin/runpod-serve` can issue an authenticated SSH launch after `runpod-bonsai status` reports RUNNING. It does **not** create a Pod, reserve a GPU, start the tunnel, or ensure boot-time startup. The RunPod template entrypoint remains unchanged until verified on a real running Pod.
-
-## Migration preparation
-
-If the original stopped Pod cannot regain its GPU, **do not delete it**. Its persistent container volume is not automatically portable. [Controlled migration guide](docs/MIGRATION.md) describes offline tests, source inventory, selected-file backup and checksum-verified restoration once the original workspace is accessible. Test locally with `python3 tests/test_migration.py`; this does not start any GPU or perform an upload.
+The local model remains independent when cloud services are unavailable.
