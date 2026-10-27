@@ -42,7 +42,7 @@ The tested environment used an RTX 5090; the scripts are **not tied to that GPU 
 
 ## Repository contents
 
-- `bin/runpod-bonsai` — REST controller for an **existing** Pod (`status`, `start`, `stop`). Starting requires explicit confirmation.
+- `bin/runpod-bonsai` — REST controller for an **existing** Pod (`status`, `start`, `stop`). Starting requires explicit confirmation; if the original host has no free GPU, the CLI reports `GPU_UNAVAILABLE` and does not retry or create a new Pod.
 - `bin/runpod-tunnel` and `systemd/runpod-tunnel.service` — **draft** SSH tunnel implementation; not yet tested as a managed service. The launcher now reads the active SSH endpoint from the RunPod REST API instead of hardcoding IP/port values.
 - `bin/bonsai-watchdog.py` — **draft**, dry-run-by-default Pod-side safety watchdog.
 - `systemd/bonsai-watchdog.service` — illustrative unit for environments where systemd is available; most container Pods do not run systemd as PID 1.
@@ -121,4 +121,4 @@ Configure your OpenAI-compatible client to use `http://127.0.0.1:18082/v1`. A cl
 - The watchdog is **not currently active**. Do not rely on automatic shutdown until it has been tested with valid stop credentials inside the Pod.
 - Do not send confidential or regulated workloads to third-party compute without appropriate authorization.
 
-For the portable experimental tunnel, see [Dynamic SSH tunnel](docs/DYNAMIC_TUNNEL.md). For the original host-specific setup, tests, performance numbers and remaining engineering tasks, see [Technical Report](docs/TECHNICAL_REPORT.md).
+For an offline error-handling regression test, run `bash tests/test_gpu_unavailable.sh` (no RunPod GPU required).\n\nFor the portable experimental tunnel, see [Dynamic SSH tunnel](docs/DYNAMIC_TUNNEL.md). For the original host-specific setup, tests, performance numbers and remaining engineering tasks, see [Technical Report](docs/TECHNICAL_REPORT.md).
