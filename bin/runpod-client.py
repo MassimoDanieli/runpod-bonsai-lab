@@ -30,7 +30,7 @@ SETTINGS = {
     "RUNPOD_POD_ID", "RUNPOD_API_KEY", "RUNPOD_LOCAL_PORT", "RUNPOD_REMOTE_PORT",
     "RUNPOD_SSH_KEY", "RUNPOD_KNOWN_HOSTS", "RUNPOD_SSH_USER",
     "RUNPOD_SSH_HOST_KEY_POLICY", "RUNPOD_SSH_TIMEOUT", "RUNPOD_API_TIMEOUT",
-    "BONSAI_REMOTE_ROOT", "RUNPOD_TUNNEL_REFRESH_SECONDS",
+    "BONSAI_REMOTE_ROOT", "BONSAI_REMOTE_STATE_DIR", "RUNPOD_TUNNEL_REFRESH_SECONDS",
     "RUNPOD_TUNNEL_RETRY_SECONDS", "RUNPOD_TUNNEL_MAX_FAILURES",
     "RUNPOD_STATE_DIR",
 }
@@ -145,6 +145,11 @@ class Config:
                 or any(p in ("", ".", "..") for p in self.remote_root.split("/")[1:])
                 or any(ord(c) < 32 or ord(c) == 127 for c in self.remote_root)):
             raise ClientError("BONSAI_REMOTE_ROOT must be a canonical absolute POSIX path", 2)
+        self.remote_state_dir = values.get("BONSAI_REMOTE_STATE_DIR", str(PurePosixPath(self.remote_root) / "run")).rstrip("/")
+        if (not self.remote_state_dir or not self.remote_state_dir.startswith("/")
+                or any(p in ("", ".", "..") for p in self.remote_state_dir.split("/")[1:])
+                or any(ord(c) < 32 or ord(c) == 127 for c in self.remote_state_dir)):
+            raise ClientError("BONSAI_REMOTE_STATE_DIR must be a canonical absolute POSIX path", 2)
         self.ssh_user = values.get("RUNPOD_SSH_USER", "root")
         if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,63}", self.ssh_user):
             raise ClientError("Invalid SSH user", 2)

@@ -24,7 +24,7 @@ install -m 700 bin/runpod-client.py bin/runpod-lifecycle.py \
   bin/runpod-inspect "$HOME/.local/bin/"
 ```
 
-Keep the private `runpod.env` from [Configuration](CONFIGURATION.md). Existing
+Keep the private `runpod.env` from [Configuration](CONFIGURATION.md). If the Pod workspace ignores `chmod`, set `BONSAI_REMOTE_STATE_DIR=/root/bonsai-state` after verifying that path has mode 700. `/root` may be ephemeral across Pod recreation; this is a temporary workaround, not durable session or billing accounting. Verify a private persistent filesystem before relying on state across Pod replacement. Existing
 private settings are never overwritten. The RunPod Pod must already have the
 matching `bonsai-pod.py`, `bonsai-watchdog.py`, model and CUDA runtime installed
 under `BONSAI_REMOTE_ROOT`; consult [Pod startup](POD_STARTUP.md). SSH public-key
