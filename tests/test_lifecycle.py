@@ -438,9 +438,20 @@ class AdapterTests(Base):
         self.assertIn("BONSAI_PORT=19080", command)
         self.assertIn("BONSAI_ROOT=/workspace/a project's files", command)
         self.assertIn("BONSAI_WATCHDOG_DRY_RUN=1", command)
+        self.assertIn("BONSAI_STATE_DIR=/workspace/ai/Bonsai-demo/run", command)
         args = m.client.ssh_arguments(self.cfg, ("192.0.2.1", 22), command)
         import shlex
         self.assertEqual(shlex.split(args[-1]), command)
+
+    def test_remote_state_dir_custom_and_validation(self):
+        config = m.client.Config({"RUNPOD_POD_ID": "test-pod", "RUNPOD_API_KEY": "FAKE_SECRET",
+                                  "BONSAI_REMOTE_STATE_DIR": "/root/bonsai-state"}, self.home)
+        ops = m.Operations(config, self.home / "config")
+        self.assertIn("BONSAI_STATE_DIR=/root/bonsai-state", ops.pod_command("status"))
+        self.assertIn("BONSAI_STATE_DIR=/root/bonsai-state", ops.pod_command("start"))
+        with self.assertRaises(m.client.ClientError):
+            m.client.Config({"RUNPOD_POD_ID": "test-pod", "RUNPOD_API_KEY": "FAKE_SECRET",
+                             "BONSAI_REMOTE_STATE_DIR": "/root/../bad"}, self.home)
 
     def test_subprocess_credentials_filtered(self):
         runner = Mock(return_value=subprocess.CompletedProcess([], 0, b"", b""))
