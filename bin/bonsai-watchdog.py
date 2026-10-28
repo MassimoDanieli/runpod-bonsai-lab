@@ -254,7 +254,10 @@ def main():
     parser.add_argument("--session-id", default=os.getenv("BONSAI_SESSION_ID", ""))
     parser.add_argument("--session-start-epoch", type=float)
     parser.add_argument("--new-session", action="store_true", help="Explicitly replace a previous DIFFERENT session record")
+    parser.add_argument("--ready-fd", type=int, help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.ready_fd is not None and args.ready_fd < 3:
+        parser.error("Internal readiness descriptor must be >= 3")
     for value in (args.idle_minutes, args.unhealthy_minutes, args.max_hours, args.interval_seconds):
         if not math.isfinite(value) or value <= 0:
             parser.error("Timeouts must be finite and positive")
@@ -290,6 +293,12 @@ def main():
             except (OSError, ValueError, urllib.error.URLError, TimeoutError):
                 log("probe unavailable or invalid; not counted as proven idle")
                 return watchdog.observe(time.monotonic(), error=True)
+
+        if args.ready_fd is not None:
+            try:
+                os.write(args.ready_fd, b"READY\n")
+            finally:
+                os.close(args.ready_fd)
 
         while True:
             state, reason = probe()

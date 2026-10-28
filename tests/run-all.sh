@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [[ "$(uname -s)" == Linux ]] || {
-  echo "The atomic restore tests require Linux (renameat2 RENAME_NOREPLACE)." >&2
+  echo "The atomic restore and process supervision tests require Linux."
   exit 2
 }
 command -v python3 >/dev/null
@@ -16,6 +16,7 @@ done
 python3 -m py_compile bin/*.py tests/*.py
 python3 -m unittest discover -s tests -p test_watchdog.py -v
 python3 -m unittest discover -s tests -p test_archive_safety.py -v
+python3 -m unittest discover -s tests -p test_pod_supervisor.py -v
 bash tests/test_gpu_unavailable.sh
 bash tests/test_startup_preflight.sh
 python3 tests/test_migration.py
