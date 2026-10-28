@@ -65,7 +65,7 @@ modal setup                                   # browser login, stores ~/.modal.t
 modal run cloud/bonsai_modal.py::download                 # text only
 modal run cloud/bonsai_modal.py::download --vision        # also the image projector
 
-modal deploy cloud/bonsai_modal.py            # prints the https://...modal.run URL
+modal deploy cloud/bonsai_modal.py            # publishes the endpoint
 ```
 
 Settings are read **at deploy time** and baked into the image; redeploy after
@@ -85,7 +85,9 @@ Create a **proxy auth token** in the Modal dashboard (Settings → Proxy Auth
 Tokens) or with the `modal workspace proxy-tokens` CLI, then keep it out of Git:
 
 ```bash
-export BONSAI_MODAL_URL=https://<workspace>--bonsai-cloud-serve.modal.run
+# The URL includes a region (e.g. ...-serve.us-east.modal.run); ask Modal for it
+# rather than building it by hand. The dashboard link printed by deploy is not it.
+export BONSAI_MODAL_URL=$(python3 -c "import modal; print(modal.Function.from_name('bonsai-cloud', 'serve').get_web_url())")
 export MODAL_PROXY_TOKEN_ID=wk-...
 export MODAL_PROXY_TOKEN_SECRET=ws-...
 ```

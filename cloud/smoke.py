@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Live acceptance check for the Modal endpoint. Standard library only.
 
-    export BONSAI_MODAL_URL=https://<workspace>--bonsai-cloud-serve.modal.run
+    export BONSAI_MODAL_URL=$(python3 -c "import modal; print(modal.Function.from_name('bonsai-cloud', 'serve').get_web_url())")
     export MODAL_PROXY_TOKEN_ID=wk-...  MODAL_PROXY_TOKEN_SECRET=ws-...
     python3 cloud/smoke.py                      # health (cold start) + short chat
     python3 cloud/smoke.py --long 12000         # streamed generation past 150 s
@@ -31,7 +31,8 @@ def base_url(env=None):
     env = os.environ if env is None else env
     url = env.get("BONSAI_MODAL_URL", "").rstrip("/")
     if not url.startswith("https://") or not url.endswith(".modal.run"):
-        raise SystemExit("Set BONSAI_MODAL_URL to the https://...modal.run URL printed by modal deploy")
+        raise SystemExit("Set BONSAI_MODAL_URL to the endpoint (https://...modal.run), not the dashboard link; "
+                         "see docs/MODAL.md for the get_web_url() one-liner")
     return url
 
 
