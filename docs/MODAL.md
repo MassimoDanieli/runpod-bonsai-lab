@@ -5,10 +5,10 @@ RunPod machinery: there is no Pod to start, stop, migrate or forget running, no
 SSH tunnel, no endpoint discovery and no Pod-side watchdog. A GPU container
 exists only while requests arrive plus an idle window, then Modal removes it.
 
-**Status:** offline-tested only (unit tests, image steps checked against the
-real binary, app definition loaded with the Modal 1.6.3 SDK). No image has been
-built and no GPU has run on Modal yet. Complete the acceptance checklist below
-before relying on it.
+**Status:** working on Modal since 28 October 2026 (L40S): 401 without a
+token, 11.8 s cold start, 72–76 tok/s, and a 12,000-token stream completed in
+157 s. Still open: a real OpenCode session with tool calls, and confirming
+scale-down and that rejected requests never start a container. See the checklist.
 
 ```text
 OpenCode --HTTPS + Modal-Key/Modal-Secret--> Modal proxy (401 without token)
@@ -39,7 +39,7 @@ on every cold start. Prefer a GPU with native code:
 
 | `BONSAI_MODAL_GPU` | Arch | Native kernels | Price/hour* | Expected speed |
 | --- | --- | --- | --- | --- |
-| `L40S` (default) | sm_89 | yes | $1.95 | ~74 tok/s measured by PrismML for the previous ternary 27B; Bonsai 2 not yet measured |
+| `L40S` (default) | sm_89 | yes | $1.95 | **72–76 tok/s measured** for Bonsai 2 PQ2_0 on Modal (28 Oct 2026) |
 | `A10` | sm_86 | yes | $1.10 | lower memory bandwidth; untested |
 | `RTX-PRO-6000` | sm_120 | yes | $3.03 | same architecture as the RunPod RTX 5090 (143 tok/s for Bonsai 2 PQ2_0 per PrismML); untested on Modal |
 | `A100-*`, `H100` | sm_80/90 | PTX only | $2.10–$3.95 | JIT on each cold start: avoid |
@@ -125,20 +125,26 @@ send confidential or regulated data.
 ## Live acceptance checklist
 
 Run once with the dashboard open; on L40S the whole list costs about $1 of GPU time.
+Results from the first run, 28 October 2026, L40S:
 
-- [ ] `modal deploy` builds the image (binary checksum, library check, `--version`).
-- [ ] `download` writes `current.json` with a 40-character revision.
-- [ ] `curl` without headers returns 401, and no container appears in the dashboard.
-- [ ] `smoke.py`: record the cold-start time and tok/s.
-- [ ] `smoke.py --long 12000`: Modal documents a 150 s HTTP limit for web
-      endpoints but not how it treats streams. `OK` means long streams work;
-      `CUT SHORT` means long OpenCode generations need the fallback below.
+- [x] `modal deploy` builds the image (binary checksum, library check, `--version`
+      reports build 10826 / c9c34bc9c). GPU functions need a payment method on
+      the workspace, even to run the CPU-only `download`.
+- [x] `download` writes `current.json` with a 40-character revision (`serve` refuses
+      to start otherwise).
+- [x] `curl` without headers returns 401.
+- [ ] No container appears in the dashboard for that rejected request.
+- [x] `smoke.py`: cold start 11.8 s; chat 72.4 tok/s cold, 75.5 tok/s warm.
+- [x] `smoke.py --long 12000`: HTTP 200, 12,002/12,000 chunks in 157 s. Modal's
+      documented 150 s web request limit did not cut a continuous stream.
 - [ ] A real OpenCode session with tool calls.
 - [ ] After the idle window, the container disappears and billing stops.
 
-**Fallback if streams are cut at 150 s:** move `serve` to Modal's newer
+**If long requests ever fail:** a stream that sends tokens continuously passed
+157 s, but a request that stays silent for more than 150 s (for example a very
+long prompt still being processed) was not tested. The fallback is Modal's newer
 `@app.server()` class API, which has no fixed request timeout but answers 503
-while scaled to zero, and add a small wake-up step before starting OpenCode.
+while scaled to zero, plus a small wake-up step before starting OpenCode.
 
 ## Relationship to the RunPod path
 

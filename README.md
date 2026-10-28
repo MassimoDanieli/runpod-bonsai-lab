@@ -27,7 +27,8 @@ modal deploy cloud/bonsai_modal.py          # HTTPS endpoint, L40S by default
 python3 cloud/smoke.py                      # cold start + tok/s
 ```
 
-Offline-tested only so far; run the [acceptance checklist](docs/MODAL.md#live-acceptance-checklist) first.
+Running on Modal since 28 October 2026: L40S, ~12 s cold start, 72–76 tok/s. An OpenCode
+session and scale-down are still to be confirmed; see the [acceptance checklist](docs/MODAL.md#live-acceptance-checklist).
 
 ## Quick start: controller
 
