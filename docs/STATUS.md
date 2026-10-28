@@ -1,52 +1,52 @@
 # Implementation and validation status
 
-## Process-supervision branch, 27 October 2026
+## Shared controller/configuration/SSH branch, 27 October 2026
 
-This branch is stacked on safety PR #2. It adds Pod-local process management for
-review; no host/Pod deployment, boot-hook change, GPU start or real cloud stop has
-been performed. Existing LOCAL inference is untouched.
+Stacked on process-supervision PR #3, which depends on safety PR #2. No automatic
+merge, installation on a host, live RunPod action, GPU launch, credential change or
+cloud data deletion is performed by this development work.
 
-New implementation:
+Implemented in this branch:
 
-- Linux lifetime locks and structured PID/start-time/boot/namespace/executable
-  identity; pidfd-based external stop, refusing unmanaged listeners/processes.
-- Detached supervisor with a separately initialized dry-run watchdog before the
-  model starts. Readiness requires both `/health` and `/slots`, with a timeout.
-- Model failure leaves the watchdog observing; watchdog failure stops the managed
-  model and uses a bounded restart budget without resetting the session deadline.
-- Explicit resume/new-session rules; no guess that a watchdog restart is a Pod start.
-- Bounded live model/supervisor logs. Watchdog logs rotate at restart only, keeping
-  their direct output descriptor independent of supervisor lifetime.
-- Compatibility launchers start the managed pair; an optional systemd example
-  applies only where systemd is actually available.
-- New offline unit and process-integration checks are included in `tests/run-all.sh`.
+- One data-only private config parser, REST client and SSH argument builder, shared
+  by five compatibility entrypoints. Configurable local/remote ports and remote root.
+- Explicit `start --yes`, safe EOF cancellation, strict Pod identity/port validation,
+  preserved GPU_UNAVAILABLE exit 3, no automatic paid-action retries/provisioning.
+- API credentials removed from SSH argv/environment; API errors/launch args redacted.
+- Literal remote argument quoting, stable per-Pod host-key alias, strict/accept-new
+  policy only, preserved known_hosts and noninteractive public-key authentication.
+- Foreground direct-SSH supervisor refreshes mappings while connected and after
+  disconnection, with loopback-only forwarding, private lifetime lock, bounded
+  reconnects and cleanup of its owned child. No cached-address autossh reconnects.
+- Generic configuration sample; unused fixed-endpoint tunnel example removed.
+- Updated user unit, installation instructions and offline regression checks.
 
-See the PR for actual local and CI results; publication is not live deployment.
-The supervisor deliberately refuses actual watchdog shutdown. It may stop local
-inference on a dry-run decision, but **does not stop paid GPU billing**.
+The implementation is tested using synthetic config, mocked HTTPS/SSH, a fake local
+SSH executable and deterministic time. Actual local/CI outcomes are recorded in the
+PR. This is not proof of live provider compatibility or unattended readiness.
 
-## Safety PR #2 retained
+## Earlier changes retained
 
-Private no-clobber backups, same-stream hashes, source-change detection, explicit
-asset selection, contained relative library materialization, staged atomic Linux
-restore, REST watchdog shutdown/reconciliation/backoff, persistent session records,
-finite timeout validation, ignore rules and offline CI remain in this branch.
-The existing safety tests must keep passing.
+PR #3 adds Linux process identity/locks, pidfd-based local stop, detached supervised
+model and dry-run watchdog, initialization before loading, readiness checks, bounded
+watchdog retries, session preservation and model/supervisor log retention.
+PR #2 adds private no-clobber backups, integrity/containment checks, staged atomic
+Linux restore, REST watchdog shutdown/reconciliation and persistent session records.
+These prior suites remain in the offline test gate without reduced coverage.
 
 ## Not implemented or not verified yet
 
+- Actual RunPod stop/start, endpoint and host-key rotation acceptance for this client.
 - Genuine Pod-run identity supplied by a trusted lifecycle controller. Current
   supervisor session identity is local and resets only with explicit authorization.
-- Live model/`--slots` compatibility and boot/restart tests for the actual RunPod
-  PyTorch image. No `/post_start.sh` hook is installed.
-- External recovery from whole-supervisor SIGKILL/OOM, container death, host/storage
-  failure, and continuous watchdog log retention in a long-lived deployment.
-- Real least-privilege REST shutdown from inside the Pod with controller offline.
-- Common SSH/configuration refactor, endpoint refresh during reconnect,
-  configurable remote root/local controller health port and noninteractive start.
-- `up/down/wait`, automated replacement Pods, and portable storage strategy.
-- Real restored-model inference, licence choice, complete secret/history audit,
-  and an independent provider/account-level spending guard.
+- Live model/--slots compatibility and boot/restart behavior of the RunPod image.
+  No /post_start.sh hook is installed by this branch.
+- External recovery from whole-supervisor SIGKILL/OOM, container/host/storage failure;
+  watchdog log rotation during continuous long-lived operation.
+- Real least-privilege REST shutdown from the Pod with the controller offline.
+- Complete up/down/wait orchestration, automatic replacement Pods and portable storage.
+- Restored real-model acceptance, licence selection, full secret/history audit and
+  independent provider/account budget protection.
 
-Retain the source Pod/data. Keep actual shutdown disabled until controlled live
-acceptance. Do not merge or deploy solely because an offline test suite passes.
+Keep actual watchdog shutdown disabled, retain the original Pod/data, and do not
+deploy solely because unit/CI tests pass. LOCAL inference remains independent.
