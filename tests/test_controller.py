@@ -510,7 +510,7 @@ class WrapperTests(Fixture):
                 self.assertIn("usage:", result.stdout)
 
     def test_unknown_flags_rejected_before_api_access(self):
-        for arguments in (("status", "--yes"), ("start", "--force"), ("up",)):
+        for arguments in (("status", "--yes"), ("start", "--force"), ("not-a-command",)):
             result = subprocess.run([str(ROOT / "bin/runpod-bonsai"), *arguments],
                                     capture_output=True, text=True, timeout=5)
             self.assertEqual(result.returncode, 2)
