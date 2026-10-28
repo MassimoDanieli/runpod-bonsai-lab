@@ -27,6 +27,7 @@ configurations before migrating. Error messages do not print values.
 | `RUNPOD_LOCAL_PORT` | `18082`; used by forwarding **and** the controller health check |
 | `RUNPOD_REMOTE_PORT` | `18080`; remote forward target and `BONSAI_PORT` sent to the launcher |
 | `BONSAI_REMOTE_ROOT` | `/workspace/ai/Bonsai-demo`; canonical absolute POSIX path |
+| `BONSAI_REMOTE_STATE_DIR` | `<BONSAI_REMOTE_ROOT>/run`; override when workspace cannot enforce mode 700. Canonical absolute POSIX path; verify privacy and persistence. |
 | `RUNPOD_SSH_KEY` | `$HOME/.ssh/runpod_ed25519`; owned private regular file |
 | `RUNPOD_KNOWN_HOSTS` | `$HOME/.ssh/known_hosts_runpod`; owned private regular file |
 | `RUNPOD_SSH_USER` | `root`; validated Unix-style username |
