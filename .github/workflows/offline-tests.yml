@@ -26,7 +26,7 @@ jobs:
           python -m pip install pyflakes==3.4.0
       - name: Lint
         run: |
-          python -m pyflakes bin/*.py tests/*.py
+          python -m pyflakes bin/*.py tests/*.py cloud/*.py
           for file in bin/* tests/*.sh; do
             if head -n 1 "$file" | grep -q 'env bash'; then
               shellcheck "$file"

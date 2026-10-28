@@ -1,5 +1,20 @@
 # Implementation and validation status
 
+## Modal serverless path, 28 October 2026
+
+Added `cloud/` and [Modal guide](MODAL.md) as an alternative to the Pod for
+occasional use. Repository code only: no Modal account, image build, GPU or
+token was used.
+
+- Checked offline: the PrismML release's SHA-256, its compiled GPU architectures
+  (native sm_86/89/120, PTX only for sm_80/90), that every library except
+  `libcuda.so.1` resolves from the pinned CUDA wheels, and that `--version` runs.
+- The app loads with the Modal 1.6.3 SDK; `huggingface_hub==2.3.0` exposes the
+  APIs used. 22 new offline tests, including static cost/exposure invariants.
+- Not yet verified live: image build, cold-start time, tok/s on L40S, behaviour of
+  long streams against Modal's 150 s web limit, and whether unauthenticated
+  requests ever start a container. See the acceptance checklist in the guide.
+
 ## Lifecycle orchestration branch, 28 October 2026
 
 Stacked on shared-client PR #4 (and therefore PRs #3/#2). This development changes
