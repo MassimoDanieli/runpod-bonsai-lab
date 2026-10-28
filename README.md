@@ -15,6 +15,21 @@ Manual cloud inference has been demonstrated. Shared configuration/SSH, Pod-loca
 supervision and `up/down/wait` orchestration are implemented with offline tests.
 A live provider/systemd/SSH acceptance cycle is still required. See [Status](docs/STATUS.md).
 
+## Occasional use: Modal (serverless)
+
+For a few hours a month, [Modal](docs/MODAL.md) is simpler than a Pod: the GPU
+container scales to zero when idle, at most one runs at a time, and requests
+need a Modal proxy token. There is no Pod, tunnel or watchdog to manage.
+
+```bash
+modal run cloud/bonsai_modal.py::download   # model -> Volume, CPU only
+modal deploy cloud/bonsai_modal.py          # HTTPS endpoint, L40S by default
+python3 cloud/smoke.py                      # cold start + tok/s
+```
+
+Running on Modal since 28 October 2026: L40S, ~12 s cold start, 72–76 tok/s. An OpenCode
+session and scale-down are still to be confirmed; see the [acceptance checklist](docs/MODAL.md#live-acceptance-checklist).
+
 ## Quick start: controller
 
 Requires Linux, Bash, Python 3.11+, Git and OpenSSH. `up` additionally requires a
