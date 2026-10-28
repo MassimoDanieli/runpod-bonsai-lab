@@ -330,6 +330,7 @@ class Operations:
 
     def pod_command(self, action, extra=()):
         return ["env", f"BONSAI_ROOT={self.config.remote_root}",
+                f"BONSAI_STATE_DIR={self.config.remote_state_dir}",
                 f"BONSAI_PORT={self.config.remote_port}", f"RUNPOD_POD_ID={self.config.pod_id}",
                 "BONSAI_WATCHDOG_DRY_RUN=1",
                 "python3", self.config.remote_root + "/bin/bonsai-pod.py", action, *extra]
