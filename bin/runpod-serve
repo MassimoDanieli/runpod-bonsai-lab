@@ -17,7 +17,12 @@ mapfile -t parts <<< "$mapping"
 (( ${#parts[@]} == 2 )) || die "Invalid endpoint mapping"
 host="${parts[0]}" port="${parts[1]}"
 [[ "$host" =~ ^[A-Za-z0-9.:_-]+$ ]] || die "Invalid SSH host"
-[[ "$port" =~ ^[0-9]+$ ]] && (( 10#$port >= 1 && 10#$port <= 65535 )) || die "Invalid SSH port"
+if [[ ! "$port" =~ ^[0-9]+$ ]]; then
+  die "Invalid SSH port"
+fi
+if ! (( 10#$port >= 1 && 10#$port <= 65535 )); then
+  die "Invalid SSH port"
+fi
 mkdir -p "$(dirname "$known")"
 ssh -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10 \
   -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$known" \
