@@ -1,14 +1,20 @@
 [Unit]
-Description=RunPod Bonsai private SSH inference tunnel
+Description=RunPod private SSH tunnel with dynamic endpoint refresh
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
 
 [Service]
 Type=simple
 ExecStart=%h/.local/bin/runpod-tunnel
 Restart=on-failure
 RestartSec=15
+RestartPreventExitStatus=2 75
+TimeoutStopSec=45
+KillMode=control-group
 NoNewPrivileges=yes
+UMask=0077
 
 [Install]
 WantedBy=default.target

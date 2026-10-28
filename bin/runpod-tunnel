@@ -1,48 +1,5 @@
 #!/usr/bin/env bash
-# Dynamic RunPod tunnel: fetch SSH mapping from the running Pod each launch.
-# No hardcoded hostname or port; uses the private local REST credentials.
+# Compatibility entrypoint; install runpod-client.py in the same directory.
 set -euo pipefail
-
-die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
-controller="${RUNPOD_BONSAI_BIN:-$HOME/.local/bin/runpod-bonsai}"
-[[ -x "$controller" ]] || die "Missing executable controller: $controller"
-
-config="${RUNPOD_BONSAI_CONFIG:-$HOME/.config/runpod.env}"
-[[ -r "$config" ]] || die "Missing config: $config"
-# shellcheck source=/dev/null
-source "$config"
-
-key="${RUNPOD_SSH_KEY:-$HOME/.ssh/runpod_ed25519}"
-known="${RUNPOD_KNOWN_HOSTS:-$HOME/.ssh/known_hosts_runpod}"
-local_port="${RUNPOD_LOCAL_PORT:-18082}"
-remote_port="${RUNPOD_REMOTE_PORT:-18080}"
-
-check_port() { [[ "$1" =~ ^[0-9]+$ ]] && (( 10#$1 > 0 && 10#$1 <= 65535 )); }
-check_port "$local_port" || die "Invalid local port"
-check_port "$remote_port" || die "Invalid remote port"
-[[ -r "$key" ]] || die "Cannot read SSH key: $key"
-command -v autossh >/dev/null || die "autossh is not installed"
-
-# API returns IP on first line and TCP port on second line.
-mapping="$("$controller" endpoint)" || die "Pod not running or no SSH mapping yet"
-mapfile -t parts <<< "$mapping"
-(( ${#parts[@]} == 2 )) || die "Unexpected mapping output"
-host="${parts[0]}"
-port="${parts[1]}"
-[[ "$host" =~ ^[A-Za-z0-9.:_-]+$ ]] || die "Invalid SSH host"
-check_port "$port" || die "Invalid SSH port"
-
-mkdir -p "$(dirname "$known")"
-if [[ ! -e "$known" ]]; then
-  (umask 077; : > "$known")
-fi
-chmod 600 "$known"
-echo "Opening SSH tunnel on 127.0.0.1:$local_port (Pod SSH mapping discovered)" >&2
-
-exec autossh -M 0 -N \
-  -o BatchMode=yes -o IdentitiesOnly=yes \
-  -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
-  -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=accept-new \
-  -o "UserKnownHostsFile=$known" \
-  -i "$key" -p "$port" \
-  -L "127.0.0.1:$local_port:127.0.0.1:$remote_port" "root@$host"
+HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 "$HERE/runpod-client.py" tunnel "$@"

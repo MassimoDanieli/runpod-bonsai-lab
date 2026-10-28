@@ -17,6 +17,7 @@ python3 -m py_compile bin/*.py tests/*.py
 python3 -m unittest discover -s tests -p test_watchdog.py -v
 python3 -m unittest discover -s tests -p test_archive_safety.py -v
 python3 -m unittest discover -s tests -p test_pod_supervisor.py -v
+python3 -m unittest discover -s tests -p test_controller.py -v
 bash tests/test_gpu_unavailable.sh
 bash tests/test_startup_preflight.sh
 python3 tests/test_migration.py

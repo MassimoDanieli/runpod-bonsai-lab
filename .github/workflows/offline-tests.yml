@@ -22,7 +22,7 @@ jobs:
       - name: Install static check tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq shellcheck
+          sudo apt-get install -y jq shellcheck openssh-client
           python -m pip install pyflakes==3.4.0
       - name: Lint
         run: |
