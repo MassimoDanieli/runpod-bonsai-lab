@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
-# Compatibility entrypoint; install runpod-client.py in the same directory.
+# Install runpod-client.py and runpod-lifecycle.py beside this entrypoint.
 set -euo pipefail
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-exec python3 "$HERE/runpod-client.py" "$@"
+case "${1:-}" in
+  up|down|wait) exec python3 "$HERE/runpod-lifecycle.py" "$@" ;;
+  -h|--help)
+    python3 "$HERE/runpod-client.py" --help
+    printf '\nLifecycle commands (systemd user manager required for up):\n'
+    exec python3 "$HERE/runpod-lifecycle.py" --help
+    ;;
+  *) exec python3 "$HERE/runpod-client.py" "$@" ;;
+esac
